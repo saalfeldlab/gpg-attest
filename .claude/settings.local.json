@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__markitdown__convert_to_markdown",
+      "Bash(pdftotext:*)",
+      "Bash(pdftk:*)",
+      "Bash(claude --agent:*)",
+      "Bash(ls:*)",
+      "Bash(wait:*)",
+      "WebFetch(domain:github.com)",
+      ""Bash(specify:*)""
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "markitdown"
+  ]
+}
