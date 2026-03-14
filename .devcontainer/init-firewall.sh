@@ -90,6 +90,15 @@ DOMAINS_TO_RESOLVE+=(
     "statsig.com"
 )
 
+# === Module: sigstore.conf ===
+# Sigstore/Rekor firewall rules
+# Allows access to Rekor transparency log
+
+DOMAINS_TO_RESOLVE+=(
+    "rekor.sigstore.dev"
+    "sigstore.dev"
+)
+
 # === Module: package-managers.conf ===
 # Package manager firewall rules - always included
 # Allows access to npm, PyPI, Conda, and Pixi
@@ -103,6 +112,7 @@ DOMAINS_TO_RESOLVE+=(
     "conda-forge.org"
     "prefix.dev"
     "conda-mapping.prefix.dev"
+    "github.io"
 )
 
 # === Resolve and add domains ===

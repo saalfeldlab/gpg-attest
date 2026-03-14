@@ -16,24 +16,16 @@
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "eamodio.gitlens",
-        "ms-toolsai.jupyter-renderers",
-        "ms-toolsai.jupyter",
-        "ms-toolsai.jupyter-keymap",
         "Anthropic.claude-code",
         "ms-azuretools.vscode-containers",
         "ms-azuretools.vscode-docker",
-        "ms-toolsai.vscode-jupyter-cell-tags",
-        "ms-toolsai.vscode-jupyter-slideshow",
-        "ms-python.vscode-pylance",
-        "ms-python.python",
-        "ms-python.debugpy",
-        "ms-python.vscode-python-envs",
         "mechatroner.rainbow-csv",
         "usernamehw.errorlens",
         "Gruntfuggly.todo-tree",
         "streetsidesoftware.code-spell-checker",
         "EditorConfig.EditorConfig",
-        "GitHub.vscode-pull-request-github"
+        "GitHub.vscode-pull-request-github",
+        "golang.Go"
       ],
       "settings": {
         "editor.formatOnSave": true,
@@ -50,17 +42,18 @@
           "zsh": {
             "path": "zsh"
           }
-        },
-        "python.defaultInterpreterPath": "/home/node/venv/bin/python"
+        }
       }
     }
   },
   "remoteUser": "node",
   "mounts": [
     "source=claude-code-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
-    "source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume"
+    "source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume",
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached"
   ],
   "containerEnv": {
+    "DISPLAY": "${localEnv:DISPLAY}",
     "NODE_OPTIONS": "--max-old-space-size=4096",
     "CLAUDE_CONFIG_DIR": "/home/node/.claude",
     "POWERLEVEL9K_DISABLE_GITSTATUS": "true",
@@ -70,11 +63,12 @@
     "NODE_OPTIONS": "--max-old-space-size=4096",
     "CLAUDE_CONFIG_DIR": "/home/node/.claude",
     "POWERLEVEL9K_DISABLE_GITSTATUS": "true",
-    "PATH": "/home/node/.local/bin:/home/node/venv/bin:${containerEnv:PATH}",
-    "VIRTUAL_ENV": "/home/node/venv",
+    "PATH": "/home/node/.local/bin:${containerEnv:PATH}",
     "TZ": "America/New_York"
   },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "workspaceFolder": "/workspace",
-  "postCreateCommand": "sudo /usr/local/bin/init-firewall.sh"
+  "postCreateCommand": "sudo /usr/local/bin/init-firewall.sh && /workspace/.devcontainer/gpg-init.sh",
+  "postStartCommand": "/workspace/.devcontainer/gpg-init.sh && /workspace/.devcontainer/start-rekor.sh",
+  "postAttachCommand": "/workspace/.devcontainer/gpg-init.sh"
 }

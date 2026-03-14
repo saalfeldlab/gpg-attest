@@ -29,8 +29,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   unzip \
   vim \
   xdg-utils \
+  default-mysql-server \
+  netcat-openbsd \
+  redis-server \
   zsh \
+  chromium \
+  dbus-x11 \
+  firefox-esr \
+  libx11-xcb1 \
+  x11-utils \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+ARG GO_VERSION=1.26.1
+RUN ARCH=$(dpkg --print-architecture) && \
+  wget -q "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" -O /tmp/go.tar.gz && \
+  tar -C /usr/local -xzf /tmp/go.tar.gz && \
+  rm /tmp/go.tar.gz
 
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
@@ -62,10 +76,6 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # Python
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
-# Install Python packages from requirements.txt
-COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
-
 RUN pip3 install --no-cache-dir --break-system-packages "git+https://github.com/github/spec-kit.git"
 
 
@@ -75,7 +85,7 @@ USER node
 
 # Install global packages
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
-ENV PATH=$PATH:/usr/local/share/npm-global/bin
+ENV PATH=$PATH:/usr/local/share/npm-global/bin:/usr/local/go/bin:/home/node/go/bin
 
 # Set the default shell to zsh rather than sh
 ENV SHELL=/bin/zsh
@@ -104,15 +114,29 @@ RUN curl -fsSL https://pixi.sh/install.sh | sh && \
     echo 'export PATH="$HOME/.pixi/bin:$PATH"' >> ~/.bashrc && \
     echo 'export PATH="$HOME/.pixi/bin:$PATH"' >> ~/.zshrc
 
+RUN go install github.com/sigstore/rekor/cmd/rekor-cli@latest && \
+    go install github.com/sigstore/rekor/cmd/rekor-server@latest && \
+    go install github.com/google/trillian/cmd/trillian_log_server@latest && \
+    go install github.com/google/trillian/cmd/trillian_log_signer@latest && \
+    go install github.com/google/trillian/cmd/createtree@latest
 
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 
-# Copy and set up firewall script
+# Copy and set up firewall script + Trillian DB init script
 COPY init-firewall.sh /usr/local/bin/
+COPY init-trillian-db.sh /usr/local/bin/
 USER root
-RUN chmod +x /usr/local/bin/init-firewall.sh && \
+RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/init-trillian-db.sh && \
   echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
-  chmod 0440 /etc/sudoers.d/node-firewall
+  chmod 0440 /etc/sudoers.d/node-firewall && \
+  echo "node ALL=(root) NOPASSWD: /usr/sbin/service mariadb start" > /etc/sudoers.d/node-mysql && \
+  echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-trillian-db.sh" >> /etc/sudoers.d/node-mysql && \
+  chmod 0440 /etc/sudoers.d/node-mysql && \
+  mkdir -p /usr/local/share/trillian && \
+  SCHEMA=$(find /home/node/go/pkg/mod/github.com/google/trillian* \
+    -name "storage.sql" -path "*/mysql/schema/*" 2>/dev/null | head -1) && \
+  test -n "$SCHEMA" && \
+  cp "$SCHEMA" /usr/local/share/trillian/storage.sql
 USER node

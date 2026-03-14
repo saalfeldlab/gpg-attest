@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>sig-stuff Manual Test Page</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 860px;
+      margin: 40px auto;
+      padding: 0 20px;
+      color: #222;
+      background: #f9f9f9;
+    }
+    h1 { margin-bottom: 4px; }
+    .subtitle { color: #666; margin-top: 0; }
+    .notice {
+      background: #fff8e1;
+      border-left: 4px solid #f9a825;
+      padding: 10px 16px;
+      margin: 20px 0;
+      border-radius: 2px;
+    }
+    .notice code { background: #f3e5ab; padding: 1px 4px; border-radius: 3px; }
+    ol li { margin-bottom: 6px; }
+    .images {
+      display: flex;
+      gap: 24px;
+      margin: 32px 0;
+      flex-wrap: wrap;
+    }
+    .image-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 12px;
+      text-align: center;
+    }
+    .image-card img {
+      display: block;
+      width: 200px;
+      height: 150px;
+    }
+    .image-card figcaption {
+      margin-top: 8px;
+      font-size: 0.85em;
+      color: #555;
+    }
+    pre {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 12px 16px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.9em;
+    }
+    code { font-family: "Fira Mono", "Consolas", monospace; }
+  </style>
+</head>
+<body>
+  <h1>sig-stuff — Manual Test Page</h1>
+  <p class="subtitle">Use this page to test the browser context menu signing flow locally.</p>
+
+  <div class="notice">
+    <strong>Serve over HTTP — not <code>file://</code></strong><br>
+    The extension's service worker uses <code>fetch()</code>, which is blocked on
+    <code>file://</code> origins. Run a local HTTP server from the
+    <code>testpage/</code> directory:
+    <pre><code>cd /workspace/testpage
+python3 -m http.server 8080
+# then open http://localhost:8080</code></pre>
+  </div>
+
+  <h2>Instructions</h2>
+  <ol>
+    <li>Load the extension in Chrome (<em>chrome://extensions</em>, Developer mode, Load unpacked → <code>extension/</code>) or Firefox (<em>about:debugging</em>).</li>
+    <li>Make sure the native host is installed: <code>make install</code> from <code>/workspace</code>.</li>
+    <li>Open DevTools (F12) and switch to the <strong>Console</strong> tab.</li>
+    <li><strong>Right-click</strong> any image below to open the browser context menu.</li>
+    <li>Click <strong>Select signing key…</strong>, select a key, then click <strong>Save</strong>.</li>
+    <li>Right-click the image again and click <strong>Sign ✓</strong> — the Console should print the sha256 hash and PGP signature.</li>
+  </ol>
+
+  <h2>Test Images</h2>
+  <div class="images">
+    <figure class="image-card">
+      <img src="gradient.png" alt="RGB colour gradient">
+      <figcaption>gradient.png<br>RGB colour gradient</figcaption>
+    </figure>
+    <figure class="image-card">
+      <img src="checker.png" alt="Blue/grey checkerboard">
+      <figcaption>checker.png<br>Blue/grey checkerboard</figcaption>
+    </figure>
+    <figure class="image-card">
+      <img src="rings.png" alt="Red/yellow concentric rings">
+      <figcaption>rings.png<br>Red/yellow concentric rings</figcaption>
+    </figure>
+  </div>
+</body>
+</html>

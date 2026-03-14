@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "sig-stuff",
+  "version": "0.1.0",
+  "description": "Sign media elements via GnuPG and log signatures.",
+  "permissions": ["nativeMessaging", "storage", "contextMenus"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "scripts": ["background/service-worker.js"]
+  },
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content/content.js"],
+    "css": ["content/menu.css"],
+    "run_at": "document_idle",
+    "all_frames": true
+  }],
+  "icons": { "128": "icons/icon-128.png" },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": false
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sig-stuff@example.com",
+      "strict_min_version": "109.0"
+    }
+  }
+}

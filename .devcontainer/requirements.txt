@@ -1,8 +1,0 @@
-# Python packages
-markitdown[all]
-markitdown-mcp
-
-# Jupyter environment
-jupyter==1.1.1
-jupytext==1.17.3
-ipython==9.5.0
