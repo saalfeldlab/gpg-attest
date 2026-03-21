@@ -1,4 +1,4 @@
-#sig-stuff-dialog-overlay {
+#attest-dialog-overlay {
   position: fixed;
   inset: 0;
   z-index: 2147483646;
@@ -8,7 +8,7 @@
   justify-content: center;
 }
 
-#sig-stuff-dialog {
+#attest-dialog {
   background: #1e1e1e;
   color: #e0e0e0;
   border: 1px solid #555;
@@ -22,14 +22,14 @@
   gap: 14px;
 }
 
-#sig-stuff-dialog h3 {
+#attest-dialog h3 {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
   color: #f0f0f0;
 }
 
-#sig-stuff-key-select {
+#attest-key-select {
   width: 100%;
   background: #2d2d2d;
   color: #e0e0e0;
@@ -40,19 +40,19 @@
   cursor: pointer;
 }
 
-#sig-stuff-key-select:focus {
+#attest-key-select:focus {
   outline: none;
   border-color: #888;
 }
 
-.sig-stuff-btn-row {
+.attest-btn-row {
   display: flex;
   flex-direction: row;
   justify-content: flex-end;
   gap: 8px;
 }
 
-.sig-stuff-btn-row button {
+.attest-btn-row button {
   background: #2d2d2d;
   color: #e0e0e0;
   border: 1px solid #555;
@@ -63,17 +63,32 @@
   transition: background 0.1s;
 }
 
-.sig-stuff-btn-row button:hover {
+.attest-btn-row button:hover {
   background: #3a3a3a;
   border-color: #888;
 }
 
-.sig-stuff-btn-row button:last-child {
+.attest-btn-row button:last-child {
   background: #1a6b3a;
   border-color: #2a9b5a;
   color: #fff;
 }
 
-.sig-stuff-btn-row button:last-child:hover {
+.attest-btn-row button:last-child:hover {
   background: #1d8045;
+}
+
+.attest-wrapper {
+  display: inline-block;
+  position: relative;
+}
+
+.attest-badge {
+  position: absolute !important;
+  top: 2px !important;
+  right: 2px !important;
+  width: 24px !important;
+  height: 24px !important;
+  pointer-events: none !important;
+  z-index: 2147483647 !important;
 }

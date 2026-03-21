@@ -1,7 +1,0 @@
-{
-  "name": "dev.sig_stuff.native",
-  "description": "sig-stuff native messaging host: signs content via GnuPG",
-  "path": "BINARY_PATH_PLACEHOLDER",
-  "type": "stdio",
-  "allowed_origins": ["chrome-extension://PLACEHOLDER_CHROME_EXTENSION_ID/"]
-}

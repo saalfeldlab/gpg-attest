@@ -7,7 +7,8 @@ function sendBg(msg) {
   });
 }
 
-const select = document.getElementById("sig-stuff-key-select");
+const select = document.getElementById("attest-key-select");
+const logUrlInput = document.getElementById("attest-log-url");
 const status = document.getElementById("status");
 
 async function load() {
@@ -47,6 +48,9 @@ async function load() {
   if (!storedKeyID && keys.length > 0) {
     select.options[0].selected = true;
   }
+
+  const { logUrl } = await sendBg({ type: "get_log_url" });
+  logUrlInput.value = logUrl;
 }
 
 select.addEventListener("change", async () => {
@@ -56,6 +60,17 @@ select.addEventListener("change", async () => {
     await sendBg({ type: "set_key", keyID: selected });
   } catch (err) {
     status.textContent = "Error: could not save key.";
+    status.className = "error";
+  }
+});
+
+logUrlInput.addEventListener("change", async () => {
+  const url = logUrlInput.value.trim();
+  if (!url) return;
+  try {
+    await sendBg({ type: "set_log_url", logUrl: url });
+  } catch (err) {
+    status.textContent = "Error: could not save log server URL.";
     status.className = "error";
   }
 });

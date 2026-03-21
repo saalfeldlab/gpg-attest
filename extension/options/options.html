@@ -2,11 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>sig-stuff Options</title>
+  <title>attestension Options</title>
+  <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <h2>Signing key</h2>
-  <select id="sig-stuff-key-select"></select>
+  <select id="attest-key-select"></select>
+
+  <h2>Log server</h2>
+  <input id="attest-log-url" type="url" placeholder="http://localhost:8081">
+
   <p id="status"></p>
   <script src="options.js"></script>
 </body>

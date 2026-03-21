@@ -36,7 +36,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   chromium \
   dbus-x11 \
   firefox-esr \
+  fonts-dejavu \
+  fonts-noto-core \
   libx11-xcb1 \
+  librsvg2-bin \
   x11-utils \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -114,9 +117,7 @@ RUN curl -fsSL https://pixi.sh/install.sh | sh && \
     echo 'export PATH="$HOME/.pixi/bin:$PATH"' >> ~/.bashrc && \
     echo 'export PATH="$HOME/.pixi/bin:$PATH"' >> ~/.zshrc
 
-RUN go install github.com/sigstore/rekor/cmd/rekor-cli@latest && \
-    go install github.com/sigstore/rekor/cmd/rekor-server@latest && \
-    go install github.com/google/trillian/cmd/trillian_log_server@latest && \
+RUN go install github.com/google/trillian/cmd/trillian_log_server@latest && \
     go install github.com/google/trillian/cmd/trillian_log_signer@latest && \
     go install github.com/google/trillian/cmd/createtree@latest
 

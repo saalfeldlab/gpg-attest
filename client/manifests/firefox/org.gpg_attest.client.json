@@ -1,0 +1,7 @@
+{
+  "name": "org.gpg_attest.client",
+  "description": "gpg-attest native messaging host: signs content via GnuPG",
+  "path": "BINARY_PATH_PLACEHOLDER",
+  "type": "stdio",
+  "allowed_extensions": ["attestension@gpg-attest.org"]
+}

@@ -1,0 +1,7 @@
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+input, select, button {
+  font-family: inherit;
+}

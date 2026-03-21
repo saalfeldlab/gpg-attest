@@ -3,16 +3,16 @@ set -euo pipefail
 
 GNUPG_HOME="${GNUPGHOME:-$HOME/.gnupg}"
 
-# Returns true if any key in the keyring has a UID that is NOT test@sig-stuff.dev
+# Returns true if any key in the keyring has a UID that is NOT test@gpg-attest.org
 has_foreign_keys() {
     local foreign
     foreign=$(gpg --list-keys --with-colons 2>/dev/null \
-        | awk -F: '$1=="uid" && $10 !~ /test@sig-stuff\.dev/ {count++} END {print count+0}')
+        | awk -F: '$1=="uid" && $10 !~ /test@gpg-attest\.org/ {count++} END {print count+0}')
     [ "$foreign" -gt 0 ]
 }
 
 has_test_key() {
-    gpg --list-keys test@sig-stuff.dev >/dev/null 2>&1
+    gpg --list-keys test@gpg-attest.org >/dev/null 2>&1
 }
 
 reset_gpg() {
@@ -46,12 +46,12 @@ Key-Length: 4096
 Subkey-Type: RSA
 Subkey-Length: 4096
 Name-Real: Test Signer
-Name-Email: test@sig-stuff.dev
+Name-Email: test@gpg-attest.org
 Expire-Date: 2y
 %commit
 EOF
     echo "Test GPG key created:"
-    gpg --list-keys test@sig-stuff.dev
+    gpg --list-keys test@gpg-attest.org
 }
 
 if has_foreign_keys; then

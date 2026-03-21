@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "sig-stuff",
+  "name": "attestension",
   "version": "0.1.0",
   "description": "Sign media elements via GnuPG and log signatures.",
   "permissions": ["nativeMessaging", "storage", "contextMenus"],
@@ -9,21 +9,35 @@
     "service_worker": "background/service-worker.js",
     "scripts": ["background/service-worker.js"]
   },
-  "content_scripts": [{
-    "matches": ["<all_urls>"],
-    "js": ["content/content.js"],
-    "css": ["content/menu.css"],
-    "run_at": "document_idle",
-    "all_frames": true
-  }],
-  "icons": { "128": "icons/icon-128.png" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "css": ["content/menu.css"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "icons": {
+    "16": "icons/dcbs-2-suspect-16.png",
+    "24": "icons/dcbs-2-suspect-24.png",
+    "32": "icons/dcbs-2-suspect-32.png",
+    "64": "icons/dcbs-2-suspect-64.png",
+    "128": "icons/dcbs-2-suspect-128.png"
+  },
   "options_ui": {
     "page": "options/options.html",
     "open_in_tab": false
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*.png"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "sig-stuff@example.com",
+      "id": "attestension@gpg-attest.org",
       "strict_min_version": "109.0"
     }
   }

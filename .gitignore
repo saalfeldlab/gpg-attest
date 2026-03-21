@@ -156,3 +156,6 @@ attachments/
 *.temp
 
 .claude/settings.local.json
+
+# Redis persistence snapshot
+dump.rdb

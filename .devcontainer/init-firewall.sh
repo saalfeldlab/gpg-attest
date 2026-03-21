@@ -90,13 +90,14 @@ DOMAINS_TO_RESOLVE+=(
     "statsig.com"
 )
 
-# === Module: sigstore.conf ===
-# Sigstore/Rekor firewall rules
-# Allows access to Rekor transparency log
+# === Module: golang.conf ===
+# Go module proxy and checksum database
+# Allows go build/install to fetch modules at container runtime
 
 DOMAINS_TO_RESOLVE+=(
-    "rekor.sigstore.dev"
-    "sigstore.dev"
+    "proxy.golang.org"
+    "sum.golang.org"
+    "storage.googleapis.com"
 )
 
 # === Module: package-managers.conf ===
@@ -113,6 +114,8 @@ DOMAINS_TO_RESOLVE+=(
     "prefix.dev"
     "conda-mapping.prefix.dev"
     "github.io"
+    "www.washingtonpost.com"
+    "www.sueddeutsche.de"
 )
 
 # === Resolve and add domains ===
