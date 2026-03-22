@@ -1,10 +1,52 @@
 **gpg-attest** is a browser extension + native messaging host + transparency log server that lets users attach GnuPG-signed attestations to digital content (identified by SHA-256) and record them on an append-only log. Anyone can query the log by artifact hash and evaluate attestations against their own trust model. The log timestamps each entry with its own signature so that attestations cannot be back-dated after key revocation.
 
-- **`extension/`** — [attestension](extension/): WebExtensions Manifest V3 browser extension (Chrome, Firefox). Backend-agnostic attestation client — right-click images to attest them; query any configured log for existing attestations. Works with gpg-attest-server, and can be extended to work with other attestation services like EAS, Rekor, etc.
+For any media element (currently only images), the browser extension queries the log servers for trusted attestations, and displays an icon over the media element.
+
+This way, users can quickly know if an element is trusted by their trust network.
+
+- **`extension/`** — [attestension](extension/): WebExtensions Manifest V3 browser extension (Chrome, Firefox). Attestation client and display — right-click images to attest them; query any configured log for existing attestations.
 - **`client/`** — gpg-attest: Native messaging host (Go). Bridges the browser to the local `gpg` binary; private keys never leave the GPG keyring.
 - **`server/`** — gpg-attest-server: Transparency log server (Go). Stores entries in a Trillian Merkle tree, indexes by artifact hash via Redis, signs each entry with an Ed25519 key.
 
-The server replicates functionality provided by [Rekor](https://docs.sigstore.dev/logging/overview/) and uses the same underlying technology. We would prefer to use Rekor as is, but Rekor's current public API is focused on incurring some friction and opinions at the signing stage that is useful for software distribution, but do not apply to verdicts on arbitrary content. E.g. we want to deposit any signature on any content without verification, because verification needs to happen on the user end. This is how it's currently implemented, no data filtering, no limits, this server will not survive high frequency world wide usage or targeted DoS attacks, and will require some work to get this done.
+The server covers core functionality targeted by [Rekor](https://docs.sigstore.dev/logging/overview/) and uses the same underlying technology (Trillian). The intended production path is a self-hosted Rekor instance extended with a custom `pgp-verdict` entry type that accepts `{artifact_hash, verdict, signer_keyid, pgp_signature}` without server-side verification, contributing that entry type upstream (or maintaining a minimal fork) would give this project Rekor's battle-tested sharding, indexing, and ops for free. This server exists as a prototype while that work is pending: no data filtering, no signature verification, no limits. As currently implemented, it will not survive high-frequency worldwide usage or targeted DoS attacks.
+
+The browser extension is designed to support additional attestation backends (e.g., EAS, Rekor), contributions welcome.
+
+## This is a prototype
+
+This is an experiment to test how we could create trust in decentralized data without content based means to check for correctness and monopolist "trust guarantors". To that end, it tries to achieve:
+
+1. **Use decades-old established technology:** GPG, PGP web-of-trust, Merkle trees.
+2. **Small data footprint:** Sign and query hashes, not full data, don't check or test what's none of your business.
+3. **Minimum friction for users:** No complicated dialogs, stickers on trusted content, must just work and be super easy.
+4. **No centralized authorities:** Signatures hosted on untrusted mirrors are as good as anything, because testing depends on your local trust chain.
+5. **Good enough:** Don't solve all problems at once. E.g., trust chains of users believing in nonsense are as valid as serious actors, but you can know. Don't over-engineer, this is not a zero trust system but a useful hint that is hard to falsify, temporary mistakes are expected and can be revoked/updated.
+
+### Known weaknesses
+
+There are likely many, we would love to hear your input!
+
+#### 1. Display of trust stickers over content can be falsified
+
+Here are some ways to do that:
+
+- Providers can fake the stickers in the browser by showing images including such stickers. Once discovered, these images could be signed as untrusted which would paint over the fake stickers.
+- This, in return, can be falsified by hosting images with ever changing binary signatures (recompress with random meta data tags), such that no record sticks. This requires self-hosting on a dedicated server, once copied into other sites (e.g. social media), the content becomes static and the signatures will stick.
+- A content provider could inject Javascript that tampers with the stickers and context menus. This depends on somebody hosting such Javascript and does not transfer to re-posting the content.
+
+#### 2. GPG key handling on device may be considered an inconvenience by those inclined to complain about stuff
+
+We can integrate sensible actions into the browser extension with opinionated defaults that make this extremely easy. E.g. default choices about algorithms, expiration, always publish to standard keyservers. Here are things that users should be able to do without any friction:
+
+- show keys
+- make a key
+- revoke a key
+- trust somebody's key
+- revoke trust of somebody's key
+
+#### 3. The server is not robust
+
+We would prefer to build on the hardened Rekor Sigstore stack directly instead of maintaining an adjacent API. What we need is an API adjusted to permit submission of {hash, verdict, signature} without checking anything. The current server is not robust or scalable. A future version could add rate limiting and basic sanity checks (e.g., enforced wait times between submissions) to resist DoS without breaking the no-verification model. Bulk submission APIs for app-level use may need more thought.
 
 ## Build
 
