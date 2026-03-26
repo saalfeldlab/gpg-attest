@@ -1,16 +1,6 @@
-# gpg-attest
+# gpg-attest — Developer Reference
 
-A browser extension + native messaging host + transparency log server for attaching GnuPG-signed attestations to digital content and recording them on an append-only log.
-
-- **attestension** (`extension/`) — Backend-agnostic WebExtensions browser extension (Chrome, Firefox)
-- **gpg-attest** (`client/`) — Native messaging host; bridges the browser to `gpg`
-- **gpg-attest-server** (`server/`) — Transparency log server backed by Trillian
-
-## Purpose
-
-Digital content (images, text, video) is distributed and replicated across platforms with no reliable way to verify its veracity, origin, or meaning. gpg-attest allows actors to attach signed attestations to content pieces, identified by their SHA-256 hash. Anyone can query the transparency log for attestations about a piece of content, then evaluate those attestations against their own trust model — PGP web of trust, TOFU, a curated keyring, or any other scheme.
-
-The log is a **discovery and timestamping mechanism**, not a trust authority. It records "key K asserted verdict V about content H at time T." Verifying whether to believe that verdict is the client's responsibility.
+This file covers architecture details, server internals, devcontainer infrastructure, and development workflows not in @README.md
 
 ## Architecture
 
@@ -27,17 +17,6 @@ Signing is intentionally done in the native helper (not OpenPGP.js) so that:
 - Private keys never transit through the browser
 - `gpg-agent` handles passphrase prompting/caching
 - Hardware tokens (YubiKey, etc.) work transparently
-
-## Components
-
-- `extension/` - **attestension** — WebExtensions-compatible browser extension (JS/HTML/CSS, Manifest V3)
-- `client/` - **gpg-attest** — Native messaging host (signs content via `gpg`, lists available keys)
-- `server/` - **gpg-attest-server** — Custom transparency log server (Go, backed by Trillian)
-
-## Native Messaging Registration
-
-- Firefox: `~/.mozilla/native-messaging-hosts/org.gpg_attest.client.json` — uses `allowed_extensions`
-- Chrome: `~/.config/google-chrome/NativeMessagingHosts/org.gpg_attest.client.json` — uses `allowed_origins`
 
 ## Transparency Log Server (and why we don't just use Rekor)
 
@@ -98,17 +77,18 @@ The server timestamp prevents back-dating after key revocation:
 - Alice cannot fabricate a new verdict and claim it was signed in 2025, because the server would
   timestamp it in 2026, after the revocation.
 
-### Infrastructure (devcontainer)
+## Infrastructure (devcontainer)
 
 The devcontainer runs the backing services automatically on every container start.
 
-| Service               | Purpose                              | Port     |
-| --------------------- | ------------------------------------ | -------- |
-| MariaDB               | Trillian backing store               | 3306     |
-| Trillian log server   | Append-only Merkle tree (gRPC)       | 8090     |
-| Trillian log signer   | Batches and signs tree heads         | —        |
-| Redis                 | Search index (artifact hash → UUIDs) | 6379     |
-| **gpg-attest-server** | Custom log API                       | **8081** |
+| Service               | Purpose                               | Port     |
+| --------------------- | ------------------------------------- | -------- |
+| MariaDB               | Trillian backing store                | 3306     |
+| Trillian log server   | Append-only Merkle tree (gRPC)        | 8090     |
+| Trillian log signer   | Batches and signs tree heads          | —        |
+| Redis                 | Search index (artifact hash → UUIDs)  | 6379     |
+| **gpg-attest-server** | Custom log API                        | **8081** |
+| Caddy                 | HTTPS reverse proxy (TLS termination) | 8443     |
 
 The Trillian tree ID is written to `~/.gpg-attest/tree_id` on first start and reused on subsequent
 restarts.
@@ -121,6 +101,7 @@ restarts.
 
 ```bash
 curl http://localhost:8081/api/v1/loginfo
+curl -k https://gpg-attest.org:8443/api/v1/loginfo   # -k for self-signed cert in dev
 ```
 
 ### Logs
@@ -131,6 +112,7 @@ curl http://localhost:8081/api/v1/loginfo
 ~/.gpg-attest/logs/trillian-log-server.log
 ~/.gpg-attest/logs/trillian-log-signer.log
 ~/.gpg-attest/logs/redis.log
+~/.gpg-attest/logs/caddy.log
 ```
 
 ### Manual restart
@@ -141,7 +123,7 @@ curl http://localhost:8081/api/v1/loginfo
 
 ### Pointing the extension at the local server
 
-Set `LOG_SERVER=http://localhost:8081` in your `.env` file (copy from `.env.example`).
+Set `LOG_SERVER=https://gpg-attest.org:8443` in your `.env` file (copy from `.env.example`).
 
 ## Getting Started
 
@@ -149,72 +131,14 @@ Set `LOG_SERVER=http://localhost:8081` in your `.env` file (copy from `.env.exam
 cp .env.example .env
 ```
 
-## Platform Support
-
-The native messaging host (`client/`) is written in Go and cross-compiles for all targets from a single codebase.
-
-### Native host registration paths
-
-**Linux** (implemented):
-
-- Firefox: `~/.mozilla/native-messaging-hosts/org.gpg_attest.client.json`
-- Chromium: `~/.config/chromium/NativeMessagingHosts/org.gpg_attest.client.json`
-- Google Chrome: `~/.config/google-chrome/NativeMessagingHosts/org.gpg_attest.client.json`
-
-**macOS** (stub — not yet implemented):
-
-- Firefox: `~/Library/Application Support/Mozilla/NativeMessagingHosts/`
-- Chrome: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`
-
-**Windows** (stub — not yet implemented):
-
-- Chrome: `HKCU\Software\Google\Chrome\NativeMessagingHosts\org.gpg_attest.client`
-- Firefox: `HKCU\Software\Mozilla\NativeMessagingHosts\org.gpg_attest.client`
-
-### Building
-
-All build commands are run from the `client/` directory:
-
-| Platform      | Command                   |
-| ------------- | ------------------------- |
-| Linux (dev)   | `cd client && make build` |
-| Cross-compile | `cd client && make cross` |
-
-Run `cd client && make install` on Linux to build and register for both Firefox and Chromium.
-
-## Testing
-
-Run the full native test suite:
-
-```bash
-cd client && go test ./...
-```
-
-| Package             | Tests                                                         |
-| ------------------- | ------------------------------------------------------------- |
-| `internal/gpg`      | Real `ListKeys()` calls against the GPG keystore              |
-| `internal/protocol` | Framing encode/decode round-trips                             |
-| `cmd/gpg-attest`    | Handler validation (no GPG) + real `list_keys` and `sign` ops |
-
-### Devcontainer test key
-
-The GPG tests require the devcontainer test key to be present:
-
-- **UID**: `Test Signer <test@gpg-attest.org>`
-- **Fingerprint**: regenerated each time the devcontainer is created — check with `gpg --list-keys test@gpg-attest.org`
-- **Passphrase**: none
-
-The key is provisioned automatically by the devcontainer. Tests that exercise GPG will fail
-if this key is absent.
-
-### GPG keyring isolation
+## GPG keyring isolation
 
 VS Code's Dev Containers extension injects host GPG keys and relay sockets into the container
 at attach time (`pubring.kbx`, `private-keys-v1.d/*.key`, and four `S.gpg-agent*` sockets).
 For a signing project this is a risk: `gpg --sign` could operate on host private keys, and
 `S.gpg-agent.ssh` exposes host SSH keys.
 
-`.devcontainer/gpg-init.sh` runs at all three lifecycle hooks (`postCreateCommand`,
+`.devcontainer/init-gpg.sh` runs at all three lifecycle hooks (`postCreateCommand`,
 `postStartCommand`, `postAttachCommand`) to defend against this. On each attach it:
 
 1. Checks whether any non-test key is present in the keyring
@@ -225,11 +149,11 @@ For a signing project this is a risk: `gpg --sign` could operate on host private
 The `postAttachCommand` hook is the critical one — it fires after VS Code has fully attached
 and injected keys, so it always runs last.
 
-### Manual Testing
+## Manual Testing
 
 A complete end-to-end test using Firefox and the local test page:
 
-#### 1. Build and install the native host
+### 1. Build and install the native host
 
 ```bash
 cd /workspace/native && make install
@@ -238,7 +162,7 @@ cd /workspace/native && make install
 This compiles the Go binary and writes the native messaging manifests for Firefox
 (`~/.mozilla/native-messaging-hosts/`) and Chromium (`~/.config/chromium/NativeMessagingHosts/`).
 
-#### 2. Start the test page HTTP server
+### 2. Start the test page HTTP server
 
 The service worker uses `fetch()`, which is blocked on `file://` origins.
 
@@ -248,7 +172,7 @@ cd /workspace/testpage && python3 -m http.server 8080
 
 Leave this running in a separate terminal.
 
-#### 3. Open Firefox and load the extension
+### 3. Open Firefox and load the extension
 
 ```bash
 firefox &
@@ -264,32 +188,28 @@ In Firefox:
 The extension is now active for this browser session. It must be reloaded after each
 Firefox restart (temporary add-on limitation).
 
-#### 4. Open the test page
+### 4. Open the test page
 
 Navigate to `http://localhost:8080` in Firefox.
 
 Open DevTools (F12) and switch to the **Console** tab.
 
-#### 5. Sign an image
+### 5. Sign an image
 
 1. Right-click any image → browser context menu shows **Sign ✓**, **Sign ✗**, **Select signing key…**
 2. Click **Select signing key…** → key dialog appears → select `Test Signer <test@gpg-attest.org>` → **Save**
 3. Right-click the image again → click **Sign ✓**
 4. The Console prints the sha256 hash and PGP signature
 
-#### Reloading after code changes
+### Reloading after code changes
 
 After editing extension JS/CSS, click **Reload** on the `about:debugging` page.
 After editing the native host, re-run `cd /workspace/client && make install` and reload
 the extension.
 
-## # Digital Content Belief Scale (DCBS)
+## Digital Content Belief Scale (DCBS)
 
 A five-level classification for assessing the authenticity, accuracy, and correctness of digital content. Modeled on PGP's trust levels (1–5).
-
----
-
-## Digital Content Belief Scale (DCBS)
 
 ### The Scale
 
@@ -301,8 +221,6 @@ A five-level classification for assessing the authenticity, accuracy, and correc
 | 4     | **Trusted**   | Multiple independent credible sources; valid signatures; identifiable origin.                          |
 | 5     | **Verified**  | Cryptographic proof of origin and integrity; independently confirmed by authoritative primary sources. |
 
----
-
 ### Assessment Dimensions
 
 Two independent dimensions determine the overall level:
@@ -311,8 +229,6 @@ Two independent dimensions determine the overall level:
 - **Factual Accuracy** — Is what it states true? (cross-referencing, independent confirmation)
 
 The overall level reflects the **lower** of the two scores.
-
----
 
 ### Decision Criteria by Level
 
@@ -354,8 +270,6 @@ The overall level reflects the **lower** of the two scores.
 - Provenance transparent and auditable
 - **Action:** Treat as ground truth within the trust model.
 
----
-
 ### Quick-Reference Summary
 
 ```
@@ -365,8 +279,6 @@ The overall level reflects the **lower** of the two scores.
 4  Trusted    ████████░░  Decide on
 5  Verified   ██████████  Ground truth
 ```
-
----
 
 ### Badge Icons
 

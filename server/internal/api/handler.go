@@ -41,15 +41,27 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/loginfo", h.logInfo)
 }
 
-type createRequest struct {
-	ArtifactHash string `json:"artifact_hash"`
-	Verdict      string `json:"verdict"`
-	SignerKeyID  string `json:"signer_keyid"`
-	Signature    string `json:"signature"`
+// CreateRequest is the request body for creating a new attestation entry.
+type CreateRequest struct {
+	ArtifactHash string `json:"artifact_hash" example:"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"`
+	Verdict      string `json:"verdict" example:"trusted" enums:"false,suspect,plausible,trusted,verified"`
+	SignerKeyID  string `json:"signer_keyid" example:"3AA5C34371567BD2"`
+	Signature    string `json:"signature" example:"LS0tLS1CRUdJTi..."`
 }
 
+// createEntry creates a new attestation entry.
+// @Summary      Submit a verdict entry
+// @Description  Append a signed verdict attestation to the transparency log. The server assigns uuid, log_index, server_timestamp, and server_signature.
+// @Tags         entries
+// @Accept       json
+// @Produce      json
+// @Param        entry  body      CreateRequest  true  "Attestation entry to submit"
+// @Success      201    {object}  store.Entry
+// @Failure      400    {string}  string  "invalid request"
+// @Failure      500    {string}  string  "internal error"
+// @Router       /entries [post]
 func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
-	var req createRequest
+	var req CreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
@@ -96,6 +108,16 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(e) //nolint:errcheck
 }
 
+// listEntries retrieves all entries for an artifact hash.
+// @Summary      List entries by artifact hash
+// @Description  Retrieve all attestation entries matching the given artifact hash.
+// @Tags         entries
+// @Produce      json
+// @Param        hash   query     string  true  "Artifact hash (e.g. sha256:abcdef...)"
+// @Success      200    {array}   store.Entry
+// @Failure      400    {string}  string  "hash query parameter is required"
+// @Failure      500    {string}  string  "failed to retrieve entries"
+// @Router       /entries [get]
 func (h *Handler) listEntries(w http.ResponseWriter, r *http.Request) {
 	hash := r.URL.Query().Get("hash")
 	if hash == "" {
@@ -114,6 +136,16 @@ func (h *Handler) listEntries(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(entries) //nolint:errcheck
 }
 
+// getEntry retrieves a single entry by UUID.
+// @Summary      Get entry by UUID
+// @Description  Retrieve a single attestation entry by its UUID.
+// @Tags         entries
+// @Produce      json
+// @Param        uuid   path      string  true  "Entry UUID"
+// @Success      200    {object}  store.Entry
+// @Failure      404    {string}  string  "not found"
+// @Failure      500    {string}  string  "failed to retrieve entry"
+// @Router       /entries/{uuid} [get]
 func (h *Handler) getEntry(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("uuid")
 	e, err := h.store.GetByUUID(r.Context(), id)
@@ -129,16 +161,32 @@ func (h *Handler) getEntry(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(e) //nolint:errcheck
 }
 
+// publicKey returns the server's Ed25519 public key.
+// @Summary      Get server public key
+// @Description  Returns the server's Ed25519 public key in PEM (PKIX) format for verifying server timestamps.
+// @Tags         server
+// @Produce      plain
+// @Success      200  {string}  string  "PEM-encoded public key"
+// @Router       /publickey [get]
 func (h *Handler) publicKey(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, h.pubPEM)
 }
 
-type logInfoResponse struct {
-	TreeSize int64  `json:"tree_size"`
-	RootHash string `json:"root_hash"`
+// LogInfoResponse is the response body for the log info endpoint.
+type LogInfoResponse struct {
+	TreeSize int64  `json:"tree_size" example:"42"`
+	RootHash string `json:"root_hash" example:"abc123def456"`
 }
 
+// logInfo returns the current Merkle tree status.
+// @Summary      Get log info
+// @Description  Returns the current Trillian Merkle tree size and root hash.
+// @Tags         server
+// @Produce      json
+// @Success      200  {object}  LogInfoResponse
+// @Failure      500  {string}  string  "failed to get log info"
+// @Router       /loginfo [get]
 func (h *Handler) logInfo(w http.ResponseWriter, r *http.Request) {
 	treeSize, rootHash, err := h.store.LogInfo(r.Context())
 	if err != nil {
@@ -146,7 +194,7 @@ func (h *Handler) logInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(logInfoResponse{TreeSize: treeSize, RootHash: rootHash}) //nolint:errcheck
+	json.NewEncoder(w).Encode(LogInfoResponse{TreeSize: treeSize, RootHash: rootHash}) //nolint:errcheck
 }
 
 func newUUID() (string, error) {

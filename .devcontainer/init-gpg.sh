@@ -55,13 +55,13 @@ EOF
 }
 
 if has_foreign_keys; then
-    echo "gpg-init: foreign keys detected — resetting keyring and replacing relay agent"
+    echo "init-gpg: foreign keys detected — resetting keyring and replacing relay agent"
     reset_gpg
     create_test_key
 elif ! has_test_key; then
-    echo "gpg-init: test key missing — initialising clean keyring"
+    echo "init-gpg: test key missing — initialising clean keyring"
     reset_gpg
     create_test_key
 else
-    echo "gpg-init: keyring clean, nothing to do"
+    echo "init-gpg: keyring clean, nothing to do"
 fi

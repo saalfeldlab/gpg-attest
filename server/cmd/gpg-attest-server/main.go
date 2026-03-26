@@ -17,10 +17,20 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	httpSwagger "github.com/swaggo/http-swagger/v2"
+
 	"gpg-attest.org/server/internal/api"
 	"gpg-attest.org/server/internal/store"
+
+	_ "gpg-attest.org/server/docs"
 )
 
+// @title           gpg-attest-server API
+// @version         0.1.0
+// @description     Transparency log for GPG-signed attestations on digital content.
+// @description     Stores entries in a Trillian Merkle tree, indexes by artifact SHA-256 via Redis,
+// @description     and signs each entry with an Ed25519 server key.
+// @BasePath        /api/v1
 func main() {
 	addr := flag.String("addr", ":8081", "listen address")
 	trillianAddr := flag.String("trillian", "localhost:8090", "Trillian log server gRPC address")
@@ -54,6 +64,9 @@ func main() {
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
+	mux.Handle("GET /swagger/", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+	))
 
 	log.Printf("gpg-attest-server listening on %s (tree %d)", *addr, *treeID)
 	if err := http.ListenAndServe(*addr, loggingMiddleware(mux)); err != nil {

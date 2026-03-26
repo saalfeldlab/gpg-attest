@@ -43,6 +43,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   x11-utils \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Install Caddy reverse proxy
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  debian-keyring debian-archive-keyring apt-transport-https && \
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && \
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list && \
+  apt-get update && apt-get install -y --no-install-recommends caddy && \
+  apt-get clean && rm -rf /var/lib/apt/lists/*
+
 ARG GO_VERSION=1.26.1
 RUN ARCH=$(dpkg --print-architecture) && \
   wget -q "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" -O /tmp/go.tar.gz && \
@@ -119,7 +127,8 @@ RUN curl -fsSL https://pixi.sh/install.sh | sh && \
 
 RUN go install github.com/google/trillian/cmd/trillian_log_server@latest && \
     go install github.com/google/trillian/cmd/trillian_log_signer@latest && \
-    go install github.com/google/trillian/cmd/createtree@latest
+    go install github.com/google/trillian/cmd/createtree@latest && \
+    go install github.com/swaggo/swag/cmd/swag@latest
 
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}

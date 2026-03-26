@@ -3,12 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ── 1. Build + install native host ──────────────────────────────────────────
-echo "==> Building and installing native host..."
+# ── 1. Build + install client ──────────────────────────────────────────
+echo "==> Building and installing client..."
 (cd "$SCRIPT_DIR/client" && make install)
 
-# ── 2. Start sig-stuff stack (idempotent) ───────────────────────────────────
-echo "==> Starting sig-stuff stack..."
+# ── 2. Start gpg-attest stack (idempotent) ───────────────────────────────────
+echo "==> Starting gpg-attest stack..."
 "$SCRIPT_DIR/.devcontainer/start-services.sh"
 
 # ── 3. Start test HTTP server (if not already running) ──────────────────────
@@ -37,7 +37,7 @@ fi
 
 # ── 4. Open Firefox with three tabs ─────────────────────────────────────────
 echo "==> Opening Firefox (about:debugging | about:addons | http://localhost:8080)..."
-firefox about:debugging about:addons http://localhost:8080 &
+firefox about:debugging about:addons http://localhost:8080 https://gpg-attest.org:8443/swagger/index.html&
 disown $!
 
 echo "==> Done."

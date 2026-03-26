@@ -1,0 +1,4 @@
+gpg-attest.org:8443 {
+	tls /home/node/.gpg-attest/caddy/cert.pem /home/node/.gpg-attest/caddy/key.pem
+	reverse_proxy localhost:8081
+}

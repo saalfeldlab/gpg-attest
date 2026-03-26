@@ -1,0 +1,15 @@
+# Production Caddy configuration for gpg-attest-server
+#
+# Replace yourdomain.example.com with your actual domain.
+# Caddy auto-provisions Let's Encrypt TLS certificates for real domains.
+#
+# Prerequisites:
+#   - DNS A/AAAA record pointing to this server
+#   - Ports 80 (ACME HTTP challenge) and 443 (HTTPS) open in firewall
+#
+# Run with:
+#   caddy run --config Caddyfile.production --adapter caddyfile
+
+yourdomain.example.com {
+	reverse_proxy localhost:8081
+}

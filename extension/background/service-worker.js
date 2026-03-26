@@ -1,4 +1,4 @@
-const DEFAULT_LOG_SERVER = "http://localhost:8081";
+const DEFAULT_LOG_SERVER = "https://gpg-attest.org:8443";
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   handleMessage(msg).then(sendResponse).catch(err => sendResponse({ ok: false, error: err.message }));
