@@ -161,3 +161,36 @@ curl http://localhost:8081/api/v1/loginfo
 ```
 
 Required flags: `--key <path>` (Ed25519 PEM key, created if absent), `--tree-id <id>` (Trillian tree ID written to `~/.gpg-attest/tree_id` on first devcontainer start).
+
+### HTTPS reverse proxy (Caddy)
+
+The server listens on plain HTTP (`localhost:8081`). Caddy sits in front of it to provide HTTPS with TLS termination.
+
+**Devcontainer (development)**
+
+Caddy is pre-installed in the devcontainer and starts automatically on container start. No setup is needed:
+
+- Listens on `gpg-attest.org:443` and reverse-proxies to `localhost:8081`
+- A self-signed TLS certificate is generated on first start (stored in `~/.gpg-attest/caddy/`)
+- The container maps `gpg-attest.org` to `127.0.0.1` via `--add-host`, so the domain resolves inside the container
+- The extension's default `LOG_SERVER` points to `https://gpg-attest.org`, so it works out of the box
+- Browsers will show a certificate warning for the self-signed cert; accept it to proceed
+- Override the listen port by setting `HTTPS_PORT` in `.env` (default: `443`)
+
+**Production deployment**
+
+A production Caddyfile template is provided at `server/Caddyfile.production`. Caddy auto-provisions Let's Encrypt TLS certificates for real domains.
+
+Prerequisites:
+- DNS A/AAAA record pointing to your server
+- Ports 80 (ACME HTTP challenge) and 443 (HTTPS) open in the firewall
+
+```bash
+# 1. Edit the Caddyfile — replace yourdomain.example.com with your domain
+vi server/Caddyfile.production
+
+# 2. Start Caddy
+caddy run --config server/Caddyfile.production --adapter caddyfile
+```
+
+Then set `LOG_SERVER=https://yourdomain.example.com` in `.env` so the browser extension points to your server.
