@@ -25,7 +25,6 @@ fi
 # --- Defaults for .env variables ---
 SERVER_PORT=${SERVER_PORT:-8081}
 SERVER_HOST=${SERVER_HOST:-localhost}
-HTTPS_PORT=${HTTPS_PORT:-8443}
 TRILLIAN_HOST=${TRILLIAN_HOST:-localhost}
 TRILLIAN_RPC_PORT=${TRILLIAN_RPC_PORT:-8090}
 REDIS_HOST=${REDIS_HOST:-localhost}
@@ -124,25 +123,4 @@ if ! nc -z "$SERVER_HOST" "$SERVER_PORT" 2>/dev/null; then
 fi
 wait_tcp gpg-attest-server "$SERVER_HOST" "$SERVER_PORT"
 
-# --- Caddy TLS cert (self-signed, generated once) ---
-CADDY_CERT_DIR=$HOME/.gpg-attest/caddy
-if [ ! -f "$CADDY_CERT_DIR/cert.pem" ]; then
-    log "Generating self-signed TLS certificate..."
-    mkdir -p "$CADDY_CERT_DIR"
-    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
-        -keyout "$CADDY_CERT_DIR/key.pem" -out "$CADDY_CERT_DIR/cert.pem" \
-        -days 365 -nodes -subj "/CN=gpg-attest.org" -addext "subjectAltName=DNS:gpg-attest.org,DNS:localhost,IP:127.0.0.1" \
-        2>>"$LOG_DIR/startup.log"
-fi
-
-# --- Caddy reverse proxy (HTTPS) ---
-if ! nc -z "$SERVER_HOST" "$HTTPS_PORT" 2>/dev/null; then
-    log "Starting Caddy reverse proxy on :$HTTPS_PORT..."
-    caddy start \
-        --config /workspace/.devcontainer/Caddyfile \
-        --adapter caddyfile \
-        >"$LOG_DIR/caddy.log" 2>&1
-fi
-wait_tcp caddy "$SERVER_HOST" "$HTTPS_PORT"
-
-log "gpg-attest stack is up — http://${SERVER_HOST}:${SERVER_PORT} | https://${SERVER_HOST}:${HTTPS_PORT}"
+log "gpg-attest stack is up — http://${SERVER_HOST}:${SERVER_PORT}"

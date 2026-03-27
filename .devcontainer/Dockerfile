@@ -49,7 +49,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && \
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list && \
   apt-get update && apt-get install -y --no-install-recommends caddy && \
-  apt-get clean && rm -rf /var/lib/apt/lists/*
+  apt-get clean && rm -rf /var/lib/apt/lists/* && \
+  setcap cap_net_bind_service=+ep $(which caddy)
 
 ARG GO_VERSION=1.26.1
 RUN ARCH=$(dpkg --print-architecture) && \
