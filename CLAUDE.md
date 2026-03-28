@@ -108,7 +108,7 @@ The devcontainer runs the backing services automatically on every container star
 | Trillian log signer   | Batches and signs tree heads          | —        |
 | Redis                 | Search index (artifact hash → UUIDs)  | 6379     |
 | **gpg-attest-server** | Custom log API                        | **8081** |
-| Caddy                 | HTTPS reverse proxy (TLS termination) | 8443     |
+| Caddy                 | HTTPS reverse proxy (TLS termination) | 443      |
 
 The Trillian tree ID is written to `~/.gpg-attest/tree_id` on first start and reused on subsequent
 restarts.
@@ -121,7 +121,7 @@ restarts.
 
 ```bash
 curl http://localhost:8081/api/v1/loginfo
-curl -k https://gpg-attest.org:8443/api/v1/loginfo   # -k for self-signed cert in dev
+curl -k https://gpg-attest.org/api/v1/loginfo   # -k for self-signed cert in dev
 ```
 
 ### Logs
@@ -143,7 +143,7 @@ curl -k https://gpg-attest.org:8443/api/v1/loginfo   # -k for self-signed cert i
 
 ### Pointing the extension at the local server
 
-Set `LOG_SERVER=https://gpg-attest.org:8443` in your `.env` file (copy from `.env.example`).
+Set `LOG_SERVER=https://gpg-attest.org` in your `.env` file (copy from `.env.example`).
 
 ## Getting Started
 

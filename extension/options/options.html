@@ -1,18 +1,22 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>attestension Options</title>
-  <link rel="stylesheet" href="options.css">
-</head>
-<body>
-  <h2>Signing key</h2>
-  <select id="attest-key-select"></select>
+  <head>
+    <meta charset="UTF-8" />
+    <title>attestension Options</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <h2>Signing key</h2>
+    <select id="attest-key-select"></select>
 
-  <h2>Log server</h2>
-  <input id="attest-log-url" type="url" placeholder="https://gpg-attest.org:8443">
+    <h2>Log server</h2>
+    <input
+      id="attest-log-url"
+      type="url"
+      placeholder="https://gpg-attest.org"
+    />
 
-  <p id="status"></p>
-  <script src="options.js"></script>
-</body>
+    <p id="status"></p>
+    <script src="options.js"></script>
+  </body>
 </html>

@@ -1,7 +1,9 @@
-const DEFAULT_LOG_SERVER = "https://gpg-attest.org:8443";
+const DEFAULT_LOG_SERVER = "https://gpg-attest.org";
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  handleMessage(msg).then(sendResponse).catch(err => sendResponse({ ok: false, error: err.message }));
+  handleMessage(msg)
+    .then(sendResponse)
+    .catch((err) => sendResponse({ ok: false, error: err.message }));
   return true; // keep channel open for async response
 });
 
@@ -9,8 +11,12 @@ async function handleMessage(msg) {
   switch (msg.type) {
     case "list_keys": {
       const id = crypto.randomUUID();
-      const resp = await new Promise(resolve =>
-        chrome.runtime.sendNativeMessage("org.gpg_attest.client", { id, op: "list_keys" }, resolve)
+      const resp = await new Promise((resolve) =>
+        chrome.runtime.sendNativeMessage(
+          "org.gpg_attest.client",
+          { id, op: "list_keys" },
+          resolve,
+        ),
       );
       return { ok: resp.ok, keys: resp.keys, error: resp.error };
     }
@@ -47,7 +53,13 @@ async function handleMessage(msg) {
   }
 }
 
-const VERDICT_SCORE = { false: 1, suspect: 2, plausible: 3, trusted: 4, verified: 5 };
+const VERDICT_SCORE = {
+  false: 1,
+  suspect: 2,
+  plausible: 3,
+  trusted: 4,
+  verified: 5,
+};
 
 let trustedKeysCache = null; // { keys: string[], fetchedAt: number }
 let serverKeyCache = null; // { fingerprint: string, importedAt: number }
@@ -59,20 +71,24 @@ async function getTrustedFingerprints() {
     return trustedKeysCache.keys;
   }
   const id = crypto.randomUUID();
-  const resp = await new Promise(resolve =>
-    chrome.runtime.sendNativeMessage("org.gpg_attest.client", { id, op: "list_keys" }, resolve)
+  const resp = await new Promise((resolve) =>
+    chrome.runtime.sendNativeMessage(
+      "org.gpg_attest.client",
+      { id, op: "list_keys" },
+      resolve,
+    ),
   );
   const keys = (resp.keys || [])
-    .filter(k => k.trust === "f" || k.trust === "u")
-    .map(k => k.fingerprint);
+    .filter((k) => k.trust === "f" || k.trust === "u")
+    .map((k) => k.fingerprint);
   trustedKeysCache = { keys, fetchedAt: now };
   return keys;
 }
 
 function nativeMessage(msg) {
   msg.id = msg.id || crypto.randomUUID();
-  return new Promise(resolve =>
-    chrome.runtime.sendNativeMessage("org.gpg_attest.client", msg, resolve)
+  return new Promise((resolve) =>
+    chrome.runtime.sendNativeMessage("org.gpg_attest.client", msg, resolve),
   );
 }
 
@@ -86,7 +102,10 @@ async function ensureServerKeyImported() {
   const resp = await fetch(`${logServer}/api/v1/publickey`);
   if (!resp.ok) throw new Error("failed to fetch server public key");
   const armoredKey = await resp.text();
-  const importResp = await nativeMessage({ op: "import_key", payload: btoa(armoredKey) });
+  const importResp = await nativeMessage({
+    op: "import_key",
+    payload: btoa(armoredKey),
+  });
   if (!importResp.ok || !importResp.imported?.length) {
     throw new Error(importResp.error || "import_key failed");
   }
@@ -103,25 +122,37 @@ async function handleGetVerdicts(url) {
 
   try {
     const response = await fetch(url);
-    if (!response.ok) { verdictsCache.set(url, { level: null }); return { level: null }; }
+    if (!response.ok) {
+      verdictsCache.set(url, { level: null });
+      return { level: null };
+    }
     const buffer = await response.arrayBuffer();
     const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
     const sha256Hex = Array.from(new Uint8Array(hashBuffer))
-      .map(b => b.toString(16).padStart(2, "0")).join("");
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
 
     const { logUrl } = await chrome.storage.local.get("logUrl");
     const logServer = logUrl || DEFAULT_LOG_SERVER;
 
     const trustedFingerprints = await getTrustedFingerprints();
-    if (trustedFingerprints.length === 0) { verdictsCache.set(url, { level: null }); return { level: null }; }
+    if (trustedFingerprints.length === 0) {
+      verdictsCache.set(url, { level: null });
+      return { level: null };
+    }
 
-    const entriesResp = await fetch(`${logServer}/api/v1/entries?hash=sha256:${sha256Hex}`);
-    if (!entriesResp.ok) { verdictsCache.set(url, { level: null }); return { level: null }; }
+    const entriesResp = await fetch(
+      `${logServer}/api/v1/entries?hash=sha256:${sha256Hex}`,
+    );
+    if (!entriesResp.ok) {
+      verdictsCache.set(url, { level: null });
+      return { level: null };
+    }
     const entries = await entriesResp.json();
 
     // Filter to trusted signers, keep latest entry per signer
     const bySignerMap = new Map();
-    for (const entry of (entries || [])) {
+    for (const entry of entries || []) {
       if (!trustedFingerprints.includes(entry.signer_keyid)) continue;
       const existing = bySignerMap.get(entry.signer_keyid);
       if (!existing || entry.server_timestamp > existing.server_timestamp) {
@@ -129,7 +160,10 @@ async function handleGetVerdicts(url) {
       }
     }
 
-    if (bySignerMap.size === 0) { verdictsCache.set(url, { level: null }); return { level: null }; }
+    if (bySignerMap.size === 0) {
+      verdictsCache.set(url, { level: null });
+      return { level: null };
+    }
 
     // Verify signatures: server timestamp signature + signer attestation signature
     let serverFingerprint;
@@ -147,26 +181,30 @@ async function handleGetVerdicts(url) {
       // Server timestamp signature
       verifyEntries.push({
         signature: entry.server_signature,
-        payload: btoa(canonicalJSON({
-          artifact_hash: entry.artifact_hash,
-          log_index: entry.log_index,
-          server_timestamp: entry.server_timestamp,
-          signature: entry.signature,
-          signer_keyid: entry.signer_keyid,
-          uuid: entry.uuid,
-          verdict: entry.verdict,
-        })),
+        payload: btoa(
+          canonicalJSON({
+            artifact_hash: entry.artifact_hash,
+            log_index: entry.log_index,
+            server_timestamp: entry.server_timestamp,
+            signature: entry.signature,
+            signer_keyid: entry.signer_keyid,
+            uuid: entry.uuid,
+            verdict: entry.verdict,
+          }),
+        ),
         signer_keyid: serverFingerprint,
         timestamp: entry.server_timestamp,
       });
       // Signer attestation signature
       verifyEntries.push({
         signature: entry.signature,
-        payload: btoa(canonicalJSON({
-          artifact_hash: entry.artifact_hash,
-          signer_keyid: entry.signer_keyid,
-          verdict: entry.verdict,
-        })),
+        payload: btoa(
+          canonicalJSON({
+            artifact_hash: entry.artifact_hash,
+            signer_keyid: entry.signer_keyid,
+            verdict: entry.verdict,
+          }),
+        ),
         signer_keyid: entry.signer_keyid,
         timestamp: entry.server_timestamp,
       });
@@ -175,10 +213,14 @@ async function handleGetVerdicts(url) {
     // Get user's own key fingerprints for cert revocation checking
     const allKeysResp = await nativeMessage({ op: "list_keys" });
     const verifierKeyIDs = (allKeysResp.keys || [])
-      .filter(k => k.trust === "u")
-      .map(k => k.fingerprint);
+      .filter((k) => k.trust === "u")
+      .map((k) => k.fingerprint);
 
-    const verifyResp = await nativeMessage({ op: "verify", entries: verifyEntries, verifier_keyids: verifierKeyIDs });
+    const verifyResp = await nativeMessage({
+      op: "verify",
+      entries: verifyEntries,
+      verifier_keyids: verifierKeyIDs,
+    });
     const verified = [];
     if (verifyResp.ok && verifyResp.verify_results) {
       for (let i = 0; i < entriesToVerify.length; i++) {
@@ -189,9 +231,13 @@ async function handleGetVerdicts(url) {
         } else {
           const entry = entriesToVerify[i];
           const reasons = [];
-          if (!serverResult?.valid) reasons.push("server sig: " + (serverResult?.error || "invalid"));
-          if (!signerResult?.valid) reasons.push("signer sig: " + (signerResult?.error || "invalid"));
-          console.debug(`[attestension] entry ${entry.uuid} dropped: ${reasons.join(", ")}`);
+          if (!serverResult?.valid)
+            reasons.push("server sig: " + (serverResult?.error || "invalid"));
+          if (!signerResult?.valid)
+            reasons.push("signer sig: " + (signerResult?.error || "invalid"));
+          console.debug(
+            `[attestension] entry ${entry.uuid} dropped: ${reasons.join(", ")}`,
+          );
         }
       }
     } else {
@@ -200,12 +246,18 @@ async function handleGetVerdicts(url) {
       return { level: null };
     }
 
-    if (verified.length === 0) { verdictsCache.set(url, { level: null }); return { level: null }; }
+    if (verified.length === 0) {
+      verdictsCache.set(url, { level: null });
+      return { level: null };
+    }
 
     const scores = verified
-      .map(e => VERDICT_SCORE[e.verdict])
-      .filter(s => s !== undefined);
-    if (scores.length === 0) { verdictsCache.set(url, { level: null }); return { level: null }; }
+      .map((e) => VERDICT_SCORE[e.verdict])
+      .filter((s) => s !== undefined);
+    if (scores.length === 0) {
+      verdictsCache.set(url, { level: null });
+      return { level: null };
+    }
 
     const level = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
     const result = { level };
@@ -220,11 +272,13 @@ async function handleGetVerdicts(url) {
 async function handleSign(url, keyID, verdict) {
   // 1. Fetch image and compute SHA-256
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+  if (!response.ok)
+    throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
   const buffer = await response.arrayBuffer();
   const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
   const sha256Hex = Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, "0")).join("");
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 
   // 2. Build canonical payload (keys sorted alphabetically, no whitespace)
   const canonicalPayload = JSON.stringify({
@@ -236,12 +290,12 @@ async function handleSign(url, keyID, verdict) {
   // 3. Sign payload via native host
   const signId = crypto.randomUUID();
   const payloadB64 = btoa(unescape(encodeURIComponent(canonicalPayload)));
-  const nativeResp = await new Promise(resolve =>
+  const nativeResp = await new Promise((resolve) =>
     chrome.runtime.sendNativeMessage(
       "org.gpg_attest.client",
       { id: signId, op: "sign", key_id: keyID, payload: payloadB64 },
-      resolve
-    )
+      resolve,
+    ),
   );
   if (!nativeResp.ok) throw new Error(nativeResp.error || "sign failed");
 
@@ -260,13 +314,21 @@ async function handleSign(url, keyID, verdict) {
   });
   if (!postResp.ok) {
     const text = await postResp.text();
-    throw new Error(`Log server submission failed (${postResp.status}): ${text}`);
+    throw new Error(
+      `Log server submission failed (${postResp.status}): ${text}`,
+    );
   }
   const entry = await postResp.json();
 
   verdictsCache.delete(url);
 
-  return { ok: true, sha256: sha256Hex, verdict, uuid: entry.uuid, logIndex: entry.log_index };
+  return {
+    ok: true,
+    sha256: sha256Hex,
+    verdict,
+    uuid: entry.uuid,
+    logIndex: entry.log_index,
+  };
 }
 
 const VERDICTS = ["false", "suspect", "plausible", "trusted", "verified"];
@@ -280,8 +342,8 @@ function registerMenus() {
         id: "sig-attest",
         title: "Attest",
         icons: {
-          "16": "icons/dcbs-2-suspect-16.png",
-          "32": "icons/dcbs-2-suspect-32.png",
+          16: "icons/dcbs-2-suspect-16.png",
+          32: "icons/dcbs-2-suspect-32.png",
         },
         contexts: ["all"],
       });
@@ -292,8 +354,8 @@ function registerMenus() {
         id: `sig-verdict-${v}`,
         title: v,
         icons: {
-          "16": `icons/dcbs-${level}-${v}-16.png`,
-          "32": `icons/dcbs-${level}-${v}-32.png`,
+          16: `icons/dcbs-${level}-${v}-16.png`,
+          32: `icons/dcbs-${level}-${v}-32.png`,
         },
         contexts: ["all"],
       };
@@ -310,10 +372,14 @@ async function initDefaults() {
   }
   if (!stored.selectedKeyID) {
     const id = crypto.randomUUID();
-    const resp = await new Promise(resolve =>
-      chrome.runtime.sendNativeMessage("org.gpg_attest.client", { id, op: "list_keys" }, resolve)
+    const resp = await new Promise((resolve) =>
+      chrome.runtime.sendNativeMessage(
+        "org.gpg_attest.client",
+        { id, op: "list_keys" },
+        resolve,
+      ),
     );
-    const signingKeys = (resp.keys || []).filter(k => k.can_sign);
+    const signingKeys = (resp.keys || []).filter((k) => k.can_sign);
     if (signingKeys.length > 0) {
       updates.selectedKeyID = signingKeys[0].fingerprint;
     }
@@ -323,33 +389,54 @@ async function initDefaults() {
   }
 }
 
-chrome.runtime.onInstalled.addListener(() => { registerMenus(); initDefaults(); });
-chrome.runtime.onStartup.addListener(() => { registerMenus(); initDefaults(); });
+chrome.runtime.onInstalled.addListener(() => {
+  registerMenus();
+  initDefaults();
+});
+chrome.runtime.onStartup.addListener(() => {
+  registerMenus();
+  initDefaults();
+});
 
 async function getContextImageUrl(info, tabId) {
   if (info.srcUrl) return info.srcUrl;
-  return new Promise(resolve =>
-    chrome.tabs.sendMessage(tabId, { type: "get_context_image" }, resolve)
+  return new Promise((resolve) =>
+    chrome.tabs.sendMessage(tabId, { type: "get_context_image" }, resolve),
   );
 }
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const verdict = info.menuItemId.replace("sig-verdict-", "");
   if (!VERDICTS.includes(verdict)) return;
-  const { selectedKeyID: keyID } = await chrome.storage.local.get("selectedKeyID");
+  const { selectedKeyID: keyID } =
+    await chrome.storage.local.get("selectedKeyID");
   if (!keyID) {
-    chrome.tabs.sendMessage(tab.id, { type: "sig_warn", message: "No key selected. Open extension options to choose a signing key." });
+    chrome.tabs.sendMessage(tab.id, {
+      type: "sig_warn",
+      message:
+        "No key selected. Open extension options to choose a signing key.",
+    });
     return;
   }
   const imageUrl = await getContextImageUrl(info, tab.id);
   if (!imageUrl) {
-    chrome.tabs.sendMessage(tab.id, { type: "sig_warn", message: "No image found at click target." });
+    chrome.tabs.sendMessage(tab.id, {
+      type: "sig_warn",
+      message: "No image found at click target.",
+    });
     return;
   }
   try {
     const result = await handleSign(imageUrl, keyID, verdict);
-    chrome.tabs.sendMessage(tab.id, { type: "sig_result", url: imageUrl, ...result });
+    chrome.tabs.sendMessage(tab.id, {
+      type: "sig_result",
+      url: imageUrl,
+      ...result,
+    });
   } catch (err) {
-    chrome.tabs.sendMessage(tab.id, { type: "sig_error", message: err.message });
+    chrome.tabs.sendMessage(tab.id, {
+      type: "sig_error",
+      message: err.message,
+    });
   }
 });
