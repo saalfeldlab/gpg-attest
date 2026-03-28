@@ -155,3 +155,182 @@ func TestHandle_sign_verifiable(t *testing.T) {
 		t.Fatalf("gpg --verify failed: %v\noutput: %s", err, out)
 	}
 }
+
+func TestHandle_verify(t *testing.T) {
+	// Sign a payload first
+	rawPayload := []byte("verify test payload")
+	payload64 := base64.StdEncoding.EncodeToString(rawPayload)
+	signReq := &protocol.Request{
+		ID: "20", Op: "sign", KeyID: "test@gpg-attest.org", Payload: payload64,
+	}
+	signResp := handle(signReq)
+	if !signResp.OK {
+		t.Fatalf("sign failed: %s", signResp.Error)
+	}
+
+	// Now verify it
+	verifyReq := &protocol.Request{
+		ID: "21",
+		Op: "verify",
+		Entries: []protocol.VerifyEntry{
+			{
+				Signature:   signResp.Signature,
+				Payload:     payload64,
+				SignerKeyID: "test@gpg-attest.org",
+				Timestamp:   "2026-03-27T22:00:00Z",
+			},
+		},
+	}
+	verifyResp := handle(verifyReq)
+	if !verifyResp.OK {
+		t.Fatalf("verify op failed: %s", verifyResp.Error)
+	}
+	if len(verifyResp.VerifyResults) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(verifyResp.VerifyResults))
+	}
+	r := verifyResp.VerifyResults[0]
+	if !r.Valid {
+		t.Errorf("expected Valid=true, got error: %s", r.Error)
+	}
+	if r.Fingerprint == "" {
+		t.Error("expected non-empty Fingerprint")
+	}
+	if r.KeyRevoked {
+		t.Error("expected KeyRevoked=false")
+	}
+}
+
+func TestHandle_verify_emptyEntries(t *testing.T) {
+	req := &protocol.Request{ID: "22", Op: "verify"}
+	resp := handle(req)
+	if resp.OK {
+		t.Error("expected OK=false when entries is empty")
+	}
+}
+
+func TestHandle_verify_badPayload(t *testing.T) {
+	req := &protocol.Request{
+		ID: "23",
+		Op: "verify",
+		Entries: []protocol.VerifyEntry{
+			{
+				Signature:   "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----",
+				Payload:     "!!!invalid-base64!!!",
+				SignerKeyID: "test@gpg-attest.org",
+			},
+		},
+	}
+	resp := handle(req)
+	if !resp.OK {
+		t.Fatal("verify op should return OK=true with per-entry errors")
+	}
+	if len(resp.VerifyResults) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(resp.VerifyResults))
+	}
+	if resp.VerifyResults[0].Error == "" {
+		t.Error("expected error for invalid base64")
+	}
+}
+
+func TestHandle_verify_certRevoked_timestampBefore(t *testing.T) {
+	// Sign a payload with revoke-nodate@test.local (whose cert from test@ was revoked)
+	rawPayload := []byte("cert revocation test")
+	payload64 := base64.StdEncoding.EncodeToString(rawPayload)
+	signReq := &protocol.Request{
+		ID: "40", Op: "sign", KeyID: "revoke-nodate@test.local", Payload: payload64,
+	}
+	signResp := handle(signReq)
+	if !signResp.OK {
+		t.Fatalf("sign failed: %s", signResp.Error)
+	}
+
+	// Verify with a timestamp BEFORE the cert revocation — should be valid
+	verifyReq := &protocol.Request{
+		ID: "41",
+		Op: "verify",
+		Entries: []protocol.VerifyEntry{
+			{
+				Signature:   signResp.Signature,
+				Payload:     payload64,
+				SignerKeyID: "revoke-nodate@test.local",
+				Timestamp:   "2020-01-01T00:00:00Z", // well before revocation
+			},
+		},
+		VerifierKeyIDs: []string{"D781B9DF3744931B5015A72E8E1323F3A105D1B7"}, // test@gpg-attest.org
+	}
+	verifyResp := handle(verifyReq)
+	if !verifyResp.OK {
+		t.Fatalf("verify failed: %s", verifyResp.Error)
+	}
+	r := verifyResp.VerifyResults[0]
+	if !r.Valid {
+		t.Errorf("expected Valid=true (timestamp predates cert revocation), error: %s", r.Error)
+	}
+	if !r.TimestampOK {
+		t.Error("expected TimestampOK=true")
+	}
+}
+
+func TestHandle_verify_certRevoked_timestampAfter(t *testing.T) {
+	rawPayload := []byte("cert revocation test after")
+	payload64 := base64.StdEncoding.EncodeToString(rawPayload)
+	signReq := &protocol.Request{
+		ID: "42", Op: "sign", KeyID: "revoke-nodate@test.local", Payload: payload64,
+	}
+	signResp := handle(signReq)
+	if !signResp.OK {
+		t.Fatalf("sign failed: %s", signResp.Error)
+	}
+
+	// Verify with a timestamp AFTER the cert revocation — should be invalid
+	verifyReq := &protocol.Request{
+		ID: "43",
+		Op: "verify",
+		Entries: []protocol.VerifyEntry{
+			{
+				Signature:   signResp.Signature,
+				Payload:     payload64,
+				SignerKeyID: "revoke-nodate@test.local",
+				Timestamp:   "2099-01-01T00:00:00Z", // well after revocation
+			},
+		},
+		VerifierKeyIDs: []string{"D781B9DF3744931B5015A72E8E1323F3A105D1B7"},
+	}
+	verifyResp := handle(verifyReq)
+	if !verifyResp.OK {
+		t.Fatalf("verify failed: %s", verifyResp.Error)
+	}
+	r := verifyResp.VerifyResults[0]
+	if r.Valid {
+		t.Error("expected Valid=false (timestamp is after cert revocation)")
+	}
+}
+
+func TestHandle_importKey(t *testing.T) {
+	// Export the test key and re-import via handler
+	exportOut, err := exec.Command("gpg", "--export", "--armor", "test@gpg-attest.org").Output()
+	if err != nil {
+		t.Fatalf("gpg export failed: %v", err)
+	}
+
+	req := &protocol.Request{
+		ID:      "30",
+		Op:      "import_key",
+		Payload: base64.StdEncoding.EncodeToString(exportOut),
+	}
+	resp := handle(req)
+	if !resp.OK {
+		t.Fatalf("import_key failed: %s", resp.Error)
+	}
+	if len(resp.Imported) == 0 {
+		t.Error("expected at least one imported fingerprint")
+	}
+}
+
+func TestHandle_importKey_missingPayload(t *testing.T) {
+	req := &protocol.Request{ID: "31", Op: "import_key"}
+	resp := handle(req)
+	if resp.OK {
+		t.Error("expected OK=false when payload is missing")
+	}
+}

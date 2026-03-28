@@ -37,7 +37,7 @@ fi
 
 # ── 4. Open Firefox with three tabs ─────────────────────────────────────────
 echo "==> Opening Firefox (about:debugging | about:addons | http://localhost:8080)..."
-firefox about:debugging about:addons http://localhost:8080 https://gpg-attest.org:8443/swagger/index.html&
+firefox about:debugging about:addons http://localhost:8080 https://gpg-attest.org/swagger/index.html&
 disown $!
 
 echo "==> Done."

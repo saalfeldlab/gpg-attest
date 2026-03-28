@@ -50,6 +50,7 @@ async function handleMessage(msg) {
 const VERDICT_SCORE = { false: 1, suspect: 2, plausible: 3, trusted: 4, verified: 5 };
 
 let trustedKeysCache = null; // { keys: string[], fetchedAt: number }
+let serverKeyCache = null; // { fingerprint: string, importedAt: number }
 const verdictsCache = new Map(); // url -> { level: number|null }
 
 async function getTrustedFingerprints() {
@@ -66,6 +67,35 @@ async function getTrustedFingerprints() {
     .map(k => k.fingerprint);
   trustedKeysCache = { keys, fetchedAt: now };
   return keys;
+}
+
+function nativeMessage(msg) {
+  msg.id = msg.id || crypto.randomUUID();
+  return new Promise(resolve =>
+    chrome.runtime.sendNativeMessage("org.gpg_attest.client", msg, resolve)
+  );
+}
+
+async function ensureServerKeyImported() {
+  const now = Date.now();
+  if (serverKeyCache && now - serverKeyCache.importedAt < 24 * 60 * 60 * 1000) {
+    return serverKeyCache.fingerprint;
+  }
+  const { logUrl } = await chrome.storage.local.get("logUrl");
+  const logServer = logUrl || DEFAULT_LOG_SERVER;
+  const resp = await fetch(`${logServer}/api/v1/publickey`);
+  if (!resp.ok) throw new Error("failed to fetch server public key");
+  const armoredKey = await resp.text();
+  const importResp = await nativeMessage({ op: "import_key", payload: btoa(armoredKey) });
+  if (!importResp.ok || !importResp.imported?.length) {
+    throw new Error(importResp.error || "import_key failed");
+  }
+  serverKeyCache = { fingerprint: importResp.imported[0], importedAt: now };
+  return serverKeyCache.fingerprint;
+}
+
+function canonicalJSON(obj) {
+  return JSON.stringify(obj, Object.keys(obj).sort());
 }
 
 async function handleGetVerdicts(url) {
@@ -101,7 +131,78 @@ async function handleGetVerdicts(url) {
 
     if (bySignerMap.size === 0) { verdictsCache.set(url, { level: null }); return { level: null }; }
 
-    const scores = [...bySignerMap.values()]
+    // Verify signatures: server timestamp signature + signer attestation signature
+    let serverFingerprint;
+    try {
+      serverFingerprint = await ensureServerKeyImported();
+    } catch (e) {
+      console.debug("[attestension] could not import server key:", e.message);
+      verdictsCache.set(url, { level: null });
+      return { level: null };
+    }
+
+    const entriesToVerify = [...bySignerMap.values()];
+    const verifyEntries = [];
+    for (const entry of entriesToVerify) {
+      // Server timestamp signature
+      verifyEntries.push({
+        signature: entry.server_signature,
+        payload: btoa(canonicalJSON({
+          artifact_hash: entry.artifact_hash,
+          log_index: entry.log_index,
+          server_timestamp: entry.server_timestamp,
+          signature: entry.signature,
+          signer_keyid: entry.signer_keyid,
+          uuid: entry.uuid,
+          verdict: entry.verdict,
+        })),
+        signer_keyid: serverFingerprint,
+        timestamp: entry.server_timestamp,
+      });
+      // Signer attestation signature
+      verifyEntries.push({
+        signature: entry.signature,
+        payload: btoa(canonicalJSON({
+          artifact_hash: entry.artifact_hash,
+          signer_keyid: entry.signer_keyid,
+          verdict: entry.verdict,
+        })),
+        signer_keyid: entry.signer_keyid,
+        timestamp: entry.server_timestamp,
+      });
+    }
+
+    // Get user's own key fingerprints for cert revocation checking
+    const allKeysResp = await nativeMessage({ op: "list_keys" });
+    const verifierKeyIDs = (allKeysResp.keys || [])
+      .filter(k => k.trust === "u")
+      .map(k => k.fingerprint);
+
+    const verifyResp = await nativeMessage({ op: "verify", entries: verifyEntries, verifier_keyids: verifierKeyIDs });
+    const verified = [];
+    if (verifyResp.ok && verifyResp.verify_results) {
+      for (let i = 0; i < entriesToVerify.length; i++) {
+        const serverResult = verifyResp.verify_results[i * 2];
+        const signerResult = verifyResp.verify_results[i * 2 + 1];
+        if (serverResult?.valid && signerResult?.valid) {
+          verified.push(entriesToVerify[i]);
+        } else {
+          const entry = entriesToVerify[i];
+          const reasons = [];
+          if (!serverResult?.valid) reasons.push("server sig: " + (serverResult?.error || "invalid"));
+          if (!signerResult?.valid) reasons.push("signer sig: " + (signerResult?.error || "invalid"));
+          console.debug(`[attestension] entry ${entry.uuid} dropped: ${reasons.join(", ")}`);
+        }
+      }
+    } else {
+      console.debug("[attestension] verify failed:", verifyResp.error);
+      verdictsCache.set(url, { level: null });
+      return { level: null };
+    }
+
+    if (verified.length === 0) { verdictsCache.set(url, { level: null }); return { level: null }; }
+
+    const scores = verified
       .map(e => VERDICT_SCORE[e.verdict])
       .filter(s => s !== undefined);
     if (scores.length === 0) { verdictsCache.set(url, { level: null }); return { level: null }; }

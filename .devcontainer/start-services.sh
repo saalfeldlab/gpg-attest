@@ -10,7 +10,7 @@ TRILLIAN_SIGNER_RPC_PORT=8093
 TRILLIAN_SIGNER_HTTP_PORT=8094
 LOG_DIR=$HOME/.gpg-attest/logs
 TREE_ID_FILE=$HOME/.gpg-attest/tree_id
-KEY_FILE=$HOME/.gpg-attest/server.key
+GPG_KEYID=${GPG_KEYID:-no-reply@gpg-attest.org}
 WORKSPACE=${WORKSPACE:-/workspace}
 
 # --- Source .env if present (user overrides) ---
@@ -117,7 +117,7 @@ if ! nc -z "$SERVER_HOST" "$SERVER_PORT" 2>/dev/null; then
         --trillian="${TRILLIAN_HOST}:${TRILLIAN_RPC_PORT}" \
         --redis="${REDIS_HOST}:${REDIS_PORT}" \
         --tree-id="$TREE_ID" \
-        --key="$KEY_FILE" \
+        --gpg-keyid="$GPG_KEYID" \
         --addr=":$SERVER_PORT" \
         >"$LOG_DIR/gpg-attest-server.log" 2>&1 &
 fi

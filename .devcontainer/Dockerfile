@@ -19,12 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   jq \
   less \
   man-db \
-  nano \
   procps \
   python3 \
   python3-dev \
   python3-pip \
-  python3-venv \
   sudo \
   unzip \
   vim \
@@ -103,8 +101,8 @@ ENV PATH=$PATH:/usr/local/share/npm-global/bin:/usr/local/go/bin:/home/node/go/b
 ENV SHELL=/bin/zsh
 
 # Set the default editor and visual
-ENV EDITOR nano
-ENV VISUAL nano
+ENV EDITOR vim
+ENV VISUAL vim
 
 # Claude Code privacy
 ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC 1
@@ -120,11 +118,6 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
   -a "export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
   -a "zstyle ':completion:*:options' matcher-list ''" \
   -x
-
-# Install pixi package manager
-RUN curl -fsSL https://pixi.sh/install.sh | sh && \
-    echo 'export PATH="$HOME/.pixi/bin:$PATH"' >> ~/.bashrc && \
-    echo 'export PATH="$HOME/.pixi/bin:$PATH"' >> ~/.zshrc
 
 RUN go install github.com/google/trillian/cmd/trillian_log_server@latest && \
     go install github.com/google/trillian/cmd/trillian_log_signer@latest && \

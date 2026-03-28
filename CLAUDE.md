@@ -69,13 +69,33 @@ needed.
 
 ### Timestamp security model
 
-The server timestamp prevents back-dating after key revocation:
+The server signs each entry with its own GPG key, providing an authoritative timestamp
+that prevents back-dating. The extension verifies both the server's timestamp signature
+and the signer's attestation signature before displaying a badge.
+
+**Self-revocation** (key owner revokes their own key):
 
 - Alice signs verdicts throughout 2025; the log timestamps each one at submission time.
-- In 2026, Alice's key is revoked because she became unreliable.
-- Her verdicts from 2025 remain valid — the server's timestamps prove they predate the revocation.
-- Alice cannot fabricate a new verdict and claim it was signed in 2025, because the server would
-  timestamp it in 2026, after the revocation.
+- In 2026, Alice revokes her own key (e.g., she lost control of it).
+- Her verdicts from 2025 remain valid — the server timestamps prove they predate the revocation.
+- Nobody can fabricate a new verdict under Alice's key and claim it was signed in 2025, because
+  the server would timestamp it in 2026, after the revocation.
+
+**Trust withdrawal** (user revokes their certification on a signer's key):
+
+- Bob certified Alice's key in 2024 (signed it with `gpg --sign-key`).
+- In 2026, Bob decides Alice is no longer reliable and revokes his certification
+  (`gpg --edit-key alice revsig`). The revocation has a timestamp.
+- Alice's verdicts from 2025 (timestamped before Bob's revocation) remain valid for Bob.
+- Alice's verdicts timestamped after 2026 are dropped for Bob.
+- This is a per-user action — Carol's trust in Alice is unaffected unless Carol also revokes.
+
+**TODO: Third-party revocation monitoring**
+
+A separate advisory tool could watch keyservers for revocations on keys the user currently
+trusts and alert them: "Carol revoked her certification on Alice — you still trust Alice
+independently." The user would then decide whether to revoke their own certification. This
+is independent of the verification pipeline and does not gate badge display.
 
 ## Infrastructure (devcontainer)
 

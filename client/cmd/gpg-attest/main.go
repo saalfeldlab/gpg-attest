@@ -86,6 +86,80 @@ func handle(req *protocol.Request) *protocol.Response {
 			Signature: sig,
 		}
 
+	case "verify":
+		if len(req.Entries) == 0 {
+			return errResp(req.ID, "verify: entries is required")
+		}
+		results := make([]protocol.VerifyResultMsg, len(req.Entries))
+		for i, entry := range req.Entries {
+			results[i].Index = i
+			payload, err := base64.StdEncoding.DecodeString(entry.Payload)
+			if err != nil {
+				results[i].Error = fmt.Sprintf("invalid base64 payload: %v", err)
+				continue
+			}
+			vr, err := gpg.Verify(entry.Signature, payload)
+			if err != nil {
+				results[i].Error = fmt.Sprintf("verify: %v", err)
+				continue
+			}
+			results[i].Fingerprint = vr.Fingerprint
+			results[i].KeyRevoked = vr.KeyRevoked
+			results[i].KeyExpired = vr.KeyExpired
+			results[i].KeyMissing = vr.KeyMissing
+
+			selfRevoked := vr.KeyRevoked
+			selfTimestampOK := false
+			if selfRevoked && entry.Timestamp != "" {
+				revoked, revokedAt, _ := gpg.GetKeyRevocationDate(vr.Fingerprint)
+				if revoked && revokedAt != "" {
+					selfTimestampOK = entry.Timestamp < revokedAt
+				}
+			}
+
+			// Check certification revocation: has the verifying user revoked
+			// their certification on this signer's key?
+			certRevoked := false
+			certTimestampOK := false
+			if vr.Valid && vr.Fingerprint != "" && entry.Timestamp != "" {
+				for _, verifierFpr := range req.VerifierKeyIDs {
+					revoked, revokedAt, _ := gpg.GetCertRevocationDate(vr.Fingerprint, verifierFpr)
+					if revoked && revokedAt != "" {
+						certRevoked = true
+						certTimestampOK = entry.Timestamp < revokedAt
+						break
+					}
+				}
+			}
+
+			results[i].TimestampOK = (!selfRevoked || selfTimestampOK) && (!certRevoked || certTimestampOK)
+			results[i].Valid = vr.Valid && (!selfRevoked || selfTimestampOK) && (!certRevoked || certTimestampOK)
+		}
+		return &protocol.Response{
+			ID:            req.ID,
+			OK:            true,
+			VerifyResults: results,
+		}
+
+	case "import_key":
+		if req.Payload == "" {
+			return errResp(req.ID, "import_key: payload is required")
+		}
+		keyData, err := base64.StdEncoding.DecodeString(req.Payload)
+		if err != nil {
+			return errResp(req.ID, fmt.Sprintf("import_key: invalid base64 payload: %v", err))
+		}
+		fingerprints, err := gpg.ImportKey(keyData)
+		if err != nil {
+			log.Printf("import_key error: %v", err)
+			return errResp(req.ID, fmt.Sprintf("import_key: %v", err))
+		}
+		return &protocol.Response{
+			ID:       req.ID,
+			OK:       true,
+			Imported: fingerprints,
+		}
+
 	default:
 		return errResp(req.ID, fmt.Sprintf("unknown op: %q", req.Op))
 	}

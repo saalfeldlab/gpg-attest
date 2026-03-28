@@ -1,12 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strconv"
+	"strings"
 
 	"github.com/google/trillian"
 	"github.com/google/trillian/types"
@@ -41,19 +42,19 @@ type sigPayload struct {
 
 // Store manages entries in Redis (operational) and Trillian (audit trail).
 type Store struct {
-	rdb     *redis.Client
-	tlog    trillian.TrillianLogClient
-	treeID  int64
-	privKey ed25519.PrivateKey
+	rdb      *redis.Client
+	tlog     trillian.TrillianLogClient
+	treeID   int64
+	gpgKeyID string
 }
 
 // New creates a Store.
-func New(rdb *redis.Client, conn *grpc.ClientConn, treeID int64, privKey ed25519.PrivateKey) *Store {
+func New(rdb *redis.Client, conn *grpc.ClientConn, treeID int64, gpgKeyID string) *Store {
 	return &Store{
-		rdb:     rdb,
-		tlog:    trillian.NewTrillianLogClient(conn),
-		treeID:  treeID,
-		privKey: privKey,
+		rdb:      rdb,
+		tlog:     trillian.NewTrillianLogClient(conn),
+		treeID:   treeID,
+		gpgKeyID: gpgKeyID,
 	}
 }
 
@@ -80,8 +81,11 @@ func (s *Store) Append(ctx context.Context, e *Entry) error {
 	if err != nil {
 		return fmt.Errorf("marshal signing payload: %w", err)
 	}
-	sig := ed25519.Sign(s.privKey, payload)
-	e.ServerSignature = base64.StdEncoding.EncodeToString(sig)
+	sig, err := gpgSign(s.gpgKeyID, payload)
+	if err != nil {
+		return fmt.Errorf("gpg sign: %w", err)
+	}
+	e.ServerSignature = sig
 
 	// Persist full entry to Redis.
 	data, err := json.Marshal(e)
@@ -175,4 +179,21 @@ func (s *Store) LogInfo(ctx context.Context) (treeSize int64, rootHash string, e
 		return 0, "", fmt.Errorf("unmarshal log root: %w", err)
 	}
 	return int64(logRoot.TreeSize), fmt.Sprintf("%x", logRoot.RootHash), nil
+}
+
+// gpgSign produces an ASCII-armored detached PGP signature over payload.
+func gpgSign(keyID string, payload []byte) (string, error) {
+	cmd := exec.Command("gpg", "--batch", "--detach-sign", "--armor", "--local-user", keyID)
+	cmd.Stdin = bytes.NewReader(payload)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		errMsg := strings.TrimSpace(stderr.String())
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return "", fmt.Errorf("%s", errMsg)
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }

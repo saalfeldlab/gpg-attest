@@ -6,7 +6,7 @@ This way, users can quickly know if an element is trusted by their trust network
 
 - **`extension/`** — [attestension](extension/): WebExtensions Manifest V3 browser extension (Chrome, Firefox). Attestation client and display — right-click images to attest them; query any configured log for existing attestations.
 - **`client/`** — gpg-attest: Native messaging host (Go). Bridges the browser to the local `gpg` binary; private keys never leave the GPG keyring.
-- **`server/`** — gpg-attest-server: Transparency log server (Go). Stores entries in a Trillian Merkle tree, indexes by artifact hash via Redis, signs each entry with an Ed25519 key.
+- **`server/`** — gpg-attest-server: Transparency log server (Go). Stores entries in a Trillian Merkle tree, indexes by artifact hash via Redis, signs each entry with its GPG key.
 
 The server covers core functionality targeted by [Rekor](https://docs.sigstore.dev/logging/overview/) and uses the same underlying technology (Trillian). The intended production path is a self-hosted Rekor instance extended with a custom `pgp-verdict` entry type that accepts `{artifact_hash, verdict, signer_keyid, pgp_signature}` without server-side verification, contributing that entry type upstream (or maintaining a minimal fork) would give this project Rekor's battle-tested sharding, indexing, and ops for free. This server exists as a prototype while that work is pending: no data filtering, no signature verification, no limits. As currently implemented, it will not survive high-frequency worldwide usage or targeted DoS attacks.
 
@@ -160,7 +160,7 @@ Verify it is running:
 curl http://localhost:8081/api/v1/loginfo
 ```
 
-Required flags: `--key <path>` (Ed25519 PEM key, created if absent), `--tree-id <id>` (Trillian tree ID written to `~/.gpg-attest/tree_id` on first devcontainer start).
+Required flags: `--gpg-keyid <id>` (GPG key fingerprint, key ID, or email for server timestamp signing), `--tree-id <id>` (Trillian tree ID written to `~/.gpg-attest/tree_id` on first devcontainer start).
 
 ### HTTPS reverse proxy (Caddy)
 

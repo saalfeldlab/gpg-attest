@@ -1,13 +1,12 @@
 package api
 
 import (
-	"crypto/ed25519"
+	"bytes"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -21,15 +20,23 @@ var allowedVerdicts = map[string]bool{
 // Handler handles HTTP requests for the transparency log API.
 type Handler struct {
 	store  *store.Store
-	pubPEM string
+	pubKey string
 }
 
-// New creates a Handler and derives the PEM public key from privKey.
-func New(s *store.Store, privKey ed25519.PrivateKey) *Handler {
-	pub := privKey.Public().(ed25519.PublicKey)
-	der, _ := x509.MarshalPKIXPublicKey(pub)
-	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
-	return &Handler{store: s, pubPEM: pubPEM}
+// New creates a Handler and exports the GPG public key for the given key ID.
+func New(s *store.Store, gpgKeyID string) (*Handler, error) {
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("gpg", "--export", "--armor", gpgKeyID)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("gpg export public key: %s", strings.TrimSpace(stderr.String()))
+	}
+	pubKey := strings.TrimSpace(stdout.String())
+	if pubKey == "" {
+		return nil, fmt.Errorf("gpg export returned empty key for %s", gpgKeyID)
+	}
+	return &Handler{store: s, pubKey: pubKey}, nil
 }
 
 // RegisterRoutes registers all API routes on mux.
@@ -161,16 +168,16 @@ func (h *Handler) getEntry(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(e) //nolint:errcheck
 }
 
-// publicKey returns the server's Ed25519 public key.
+// publicKey returns the server's PGP public key.
 // @Summary      Get server public key
-// @Description  Returns the server's Ed25519 public key in PEM (PKIX) format for verifying server timestamps.
+// @Description  Returns the server's PGP public key in ASCII-armored format for verifying server timestamps.
 // @Tags         server
 // @Produce      plain
-// @Success      200  {string}  string  "PEM-encoded public key"
+// @Success      200  {string}  string  "ASCII-armored PGP public key"
 // @Router       /publickey [get]
 func (h *Handler) publicKey(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprint(w, h.pubPEM)
+	fmt.Fprint(w, h.pubKey)
 }
 
 // LogInfoResponse is the response body for the log info endpoint.
