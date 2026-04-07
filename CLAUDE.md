@@ -173,10 +173,10 @@ and injected keys, so it always runs last.
 
 A complete end-to-end test using Firefox and the local test page:
 
-### 1. Build and install the native host
+### 1. Build and install the client
 
 ```bash
-cd /workspace/native && make install
+cd /workspace/client && make install
 ```
 
 This compiles the Go binary and writes the native messaging manifests for Firefox

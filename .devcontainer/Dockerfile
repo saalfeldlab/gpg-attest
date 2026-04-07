@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   python3-pip \
   sudo \
   unzip \
+  zip \
   vim \
   xdg-utils \
   default-mysql-server \

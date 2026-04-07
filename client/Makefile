@@ -7,7 +7,7 @@ LDFLAGS    := -ldflags "-X gpg-attest.org/client/internal/version.Version=$(VERS
 # Detect host OS (uname on Unix; fallback to "Windows" on Windows)
 UNAME := $(shell uname -s 2>/dev/null || echo Windows)
 
-.PHONY: build install install-linux install-macos uninstall-linux uninstall-macos pkg test cross vet fmt clean
+.PHONY: build install install-linux install-macos uninstall-linux uninstall-macos pkg deb test cross vet fmt clean
 
 build:
 	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY) $(CMD_PKG)
@@ -35,6 +35,9 @@ uninstall-macos:
 
 pkg: build
 	@./scripts/build-pkg.sh $(BUILD_DIR)/$(BINARY) $(VERSION)
+
+deb: build
+	@./scripts/build-deb.sh $(BUILD_DIR)/$(BINARY) $(VERSION)
 
 test:
 	go test ./...

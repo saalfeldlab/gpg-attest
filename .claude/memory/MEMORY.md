@@ -1,0 +1,1 @@
+- [No speculation](./feedback_no_speculation.md) — Research before explaining unexpected behavior; never fabricate plausible-sounding causes.

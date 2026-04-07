@@ -116,6 +116,8 @@ DOMAINS_TO_RESOLVE+=(
     "github.io"
     "www.washingtonpost.com"
     "www.sueddeutsche.de"
+    "bsky.app"
+    "addons.mozilla.org"
 )
 
 # === Resolve and add domains ===
