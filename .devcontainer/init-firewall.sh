@@ -118,6 +118,7 @@ DOMAINS_TO_RESOLVE+=(
     "www.sueddeutsche.de"
     "bsky.app"
     "addons.mozilla.org"
+    "keyserver.ubuntu.com"
 )
 
 # === Resolve and add domains ===

@@ -5,8 +5,7 @@ function isOwnResource(url) {
 }
 
 function isOwnElement(el) {
-  return el.classList.contains('attest-badge') ||
-         el.classList.contains('attest-wrapper') ||
+  return el.dataset && el.dataset.attestBadge !== undefined ||
          (el.tagName === 'IMG' && isOwnResource(el.src));
 }
 
@@ -98,12 +97,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         processSingleImage(img);
       }
     });
-    document.querySelectorAll('*').forEach(el => {
-      if (parseBgUrl(el) === msg.url) {
-        processedBackgrounds.delete(el);
-        processSingleBackground(el);
+    const bgEls = bgUrlToElements.get(msg.url);
+    if (bgEls) {
+      for (const el of bgEls) {
+        if (el.isConnected) {
+          processedBackgrounds.delete(el);
+          processSingleBackground(el);
+        }
       }
-    });
+    }
   } else if (msg.type === "get_context_image") {
     sendResponse(lastContextImageUrl);
   } else if (msg.type === "sig_warn") {
@@ -118,6 +120,136 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 const DCBS_LABELS = ["", "false", "suspect", "plausible", "trusted", "verified"];
 const processedImages = new WeakSet();
 const processedBackgrounds = new WeakSet();
+const bgUrlToElements = new Map(); // url -> Set<Element>
+
+// --- Per-image badge overlays (inserted into target's parent for correct stacking) ---
+
+const BADGE_CSS = '.attest-badge{position:fixed;top:0;left:0;width:24px;height:24px;pointer-events:none;}';
+
+const badgeRegistry = new Map();       // badgeId → { targetRef, badgeEl, host, visible }
+const targetToBadgeId = new WeakMap(); // Element → badgeId
+let nextBadgeId = 0;
+
+const cleanupRegistry = new FinalizationRegistry(badgeId => removeBadge(badgeId));
+
+function createBadge(targetEl, level) {
+  const existing = targetToBadgeId.get(targetEl);
+  if (existing !== undefined) {
+    updateBadge(existing, level);
+    return;
+  }
+  if (!targetEl.parentElement) return;
+
+  const badgeId = nextBadgeId++;
+  const iconUrl = chrome.runtime.getURL(`icons/dcbs-${level}-${DCBS_LABELS[level]}-24.png`);
+  const title = `DCBS level ${level}: ${DCBS_LABELS[level]}`;
+
+  const badgeEl = document.createElement('img');
+  badgeEl.className = 'attest-badge';
+  badgeEl.src = iconUrl;
+  badgeEl.alt = title;
+  badgeEl.title = title;
+  badgeEl.style.display = 'none'; // hidden until IntersectionObserver confirms visibility
+
+  const host = document.createElement('div');
+  host.dataset.attestBadge = '';
+  host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;overflow:visible;pointer-events:none;';
+  const shadow = host.attachShadow({ mode: 'closed' });
+  const style = document.createElement('style');
+  style.textContent = BADGE_CSS;
+  shadow.appendChild(style);
+  shadow.appendChild(badgeEl);
+  targetEl.parentElement.appendChild(host);
+
+  const record = { targetRef: new WeakRef(targetEl), badgeEl, host, visible: false };
+  badgeRegistry.set(badgeId, record);
+  targetToBadgeId.set(targetEl, badgeId);
+
+  intersectionObs.observe(targetEl);
+  resizeObs.observe(targetEl);
+  cleanupRegistry.register(targetEl, badgeId);
+}
+
+function updateBadge(badgeId, level) {
+  const record = badgeRegistry.get(badgeId);
+  if (!record) return;
+  const iconUrl = chrome.runtime.getURL(`icons/dcbs-${level}-${DCBS_LABELS[level]}-24.png`);
+  const title = `DCBS level ${level}: ${DCBS_LABELS[level]}`;
+  record.badgeEl.src = iconUrl;
+  record.badgeEl.alt = title;
+  record.badgeEl.title = title;
+}
+
+function removeBadge(badgeId) {
+  const record = badgeRegistry.get(badgeId);
+  if (!record) return;
+  record.host.remove();
+  badgeRegistry.delete(badgeId);
+  const target = record.targetRef.deref();
+  if (target) {
+    targetToBadgeId.delete(target);
+    intersectionObs.unobserve(target);
+    resizeObs.unobserve(target);
+  }
+}
+
+function removeBadgeForTarget(el) {
+  const badgeId = targetToBadgeId.get(el);
+  if (badgeId !== undefined) removeBadge(badgeId);
+}
+
+// --- Batched position updates ---
+
+let updateScheduled = false;
+
+function scheduleUpdate() {
+  if (updateScheduled) return;
+  updateScheduled = true;
+  requestAnimationFrame(updateAllBadgePositions);
+}
+
+function updateAllBadgePositions() {
+  updateScheduled = false;
+  // Read phase — batch all getBoundingClientRect calls
+  const updates = [];
+  for (const [badgeId, record] of badgeRegistry) {
+    if (!record.visible) continue;
+    const target = record.targetRef.deref();
+    if (!target) { removeBadge(badgeId); continue; }
+    const targetRect = target.getBoundingClientRect();
+    const hostRect = record.host.getBoundingClientRect();
+    updates.push({
+      badgeEl: record.badgeEl,
+      top: targetRect.top - hostRect.top + 2,
+      left: targetRect.right - hostRect.left - 24 - 2,
+    });
+  }
+  // Write phase — batch all transform writes
+  for (const { badgeEl, top, left } of updates) {
+    badgeEl.style.transform = `translate(${left}px, ${top}px)`;
+  }
+}
+
+// --- Observers ---
+
+const intersectionObs = new IntersectionObserver(entries => {
+  for (const entry of entries) {
+    const badgeId = targetToBadgeId.get(entry.target);
+    if (badgeId === undefined) continue;
+    const record = badgeRegistry.get(badgeId);
+    if (!record) continue;
+    record.visible = entry.isIntersecting;
+    record.badgeEl.style.display = entry.isIntersecting ? '' : 'none';
+    if (entry.isIntersecting) scheduleUpdate();
+  }
+}, { threshold: 0 });
+
+const resizeObs = new ResizeObserver(() => scheduleUpdate());
+
+window.addEventListener('scroll', scheduleUpdate, { capture: true, passive: true });
+window.addEventListener('resize', scheduleUpdate, { passive: true });
+
+// --- Image and background processing ---
 
 async function processSingleImage(img) {
   if (processedImages.has(img)) return;
@@ -141,54 +273,7 @@ async function processSingleImage(img) {
   }
   if (!result || result.level === null || result.level === undefined) return;
 
-  attachBadge(img, result.level);
-}
-
-function attachBadge(img, level) {
-  const iconUrl = chrome.runtime.getURL(`icons/dcbs-${level}-${DCBS_LABELS[level]}-24.png`);
-  const title = `DCBS level ${level}: ${DCBS_LABELS[level]}`;
-
-  if (img.parentElement && img.parentElement.classList.contains("attest-wrapper")) {
-    const badge = img.parentElement.querySelector(".attest-badge");
-    if (badge) { badge.src = iconUrl; badge.alt = title; badge.title = title; }
-    return;
-  }
-
-  const wrapper = document.createElement("span");
-  wrapper.className = "attest-wrapper";
-  img.parentElement.insertBefore(wrapper, img);
-  wrapper.appendChild(img);
-
-  const badge = document.createElement("img");
-  badge.className = "attest-badge";
-  badge.src = iconUrl;
-  badge.alt = title;
-  badge.title = title;
-  wrapper.appendChild(badge);
-}
-
-function attachBadgeToBg(el, level) {
-  const iconUrl = chrome.runtime.getURL(`icons/dcbs-${level}-${DCBS_LABELS[level]}-24.png`);
-  const title = `DCBS level ${level}: ${DCBS_LABELS[level]}`;
-
-  if (getComputedStyle(el).position === 'static') {
-    el.style.position = 'relative';
-  }
-
-  const existing = el.querySelector(':scope > .attest-badge');
-  if (existing) {
-    existing.src = iconUrl;
-    existing.alt = title;
-    existing.title = title;
-    return;
-  }
-
-  const badge = document.createElement("img");
-  badge.className = "attest-badge";
-  badge.src = iconUrl;
-  badge.alt = title;
-  badge.title = title;
-  el.appendChild(badge);
+  createBadge(img, result.level);
 }
 
 async function processSingleBackground(el) {
@@ -201,6 +286,9 @@ async function processSingleBackground(el) {
   if (rect.width < 48 || rect.height < 48) return;
 
   processedBackgrounds.add(el);
+  let elSet = bgUrlToElements.get(url);
+  if (!elSet) { elSet = new Set(); bgUrlToElements.set(url, elSet); }
+  elSet.add(el);
 
   let result;
   try {
@@ -208,7 +296,7 @@ async function processSingleBackground(el) {
   } catch (_) { return; }
   if (!result || result.level == null) return;
 
-  attachBadgeToBg(el, result.level);
+  createBadge(el, result.level);
 }
 
 function processImages() {
@@ -216,8 +304,15 @@ function processImages() {
   document.querySelectorAll('*').forEach(el => processSingleBackground(el));
 }
 
-const observer = new MutationObserver(mutations => {
+// --- DOM observer (structure + style/class attribute changes) ---
+
+const domObserver = new MutationObserver(mutations => {
+  let hasAttrChange = false;
   for (const mutation of mutations) {
+    if (mutation.type === 'attributes') {
+      hasAttrChange = true;
+      continue;
+    }
     for (const node of mutation.addedNodes) {
       if (node.nodeType !== Node.ELEMENT_NODE) continue;
       if (node.tagName === "IMG") {
@@ -228,8 +323,32 @@ const observer = new MutationObserver(mutations => {
         node.querySelectorAll('*').forEach(el => processSingleBackground(el));
       }
     }
+    for (const node of mutation.removedNodes) {
+      if (node.nodeType !== Node.ELEMENT_NODE) continue;
+      removeBadgeForTarget(node);
+      for (const [url, elSet] of bgUrlToElements) {
+        elSet.delete(node);
+        if (elSet.size === 0) bgUrlToElements.delete(url);
+      }
+      if (node.querySelectorAll) {
+        node.querySelectorAll('img').forEach(img => removeBadgeForTarget(img));
+        node.querySelectorAll('*').forEach(el => {
+          removeBadgeForTarget(el);
+          for (const [url, elSet] of bgUrlToElements) {
+            elSet.delete(el);
+            if (elSet.size === 0) bgUrlToElements.delete(url);
+          }
+        });
+      }
+    }
   }
+  if (hasAttrChange) scheduleUpdate();
 });
-observer.observe(document.documentElement, { childList: true, subtree: true });
+domObserver.observe(document.documentElement, {
+  childList: true,
+  subtree: true,
+  attributes: true,
+  attributeFilter: ['style', 'class'],
+});
 
 processImages();
