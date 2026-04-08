@@ -76,7 +76,21 @@ Section: utils
 Priority: optional
 EOF
 
-# 4. Build the .deb
+# 4. Write DEBIAN/postrm — remove empty manifest directories on purge
+cat > "$DEB_ROOT/DEBIAN/postrm" <<'EOF'
+#!/bin/sh
+set -e
+if [ "$1" = "purge" ] || [ "$1" = "remove" ]; then
+  rmdir /etc/opt/chrome/native-messaging-hosts 2>/dev/null || true
+  rmdir /etc/opt/chrome 2>/dev/null || true
+  rmdir /etc/chromium/native-messaging-hosts 2>/dev/null || true
+  rmdir /etc/chromium 2>/dev/null || true
+  rmdir /usr/lib/mozilla/native-messaging-hosts 2>/dev/null || true
+fi
+EOF
+chmod 0755 "$DEB_ROOT/DEBIAN/postrm"
+
+# 5. Build the .deb
 OUTPUT_DEB="$BUILD_DIR/gpg-attest_${VERSION}_${ARCH}.deb"
 dpkg-deb --build "$DEB_ROOT" "$OUTPUT_DEB"
 
@@ -84,5 +98,5 @@ echo ""
 echo "Package built: $OUTPUT_DEB"
 echo "Install with:  sudo dpkg -i $OUTPUT_DEB"
 
-# 5. Clean up staging dir
+# 6. Clean up staging dir
 rm -rf "$DEB_ROOT"
