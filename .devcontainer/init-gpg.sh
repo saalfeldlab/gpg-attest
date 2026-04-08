@@ -7,13 +7,15 @@ GNUPG_HOME="${GNUPGHOME:-$HOME/.gnupg}"
 has_foreign_keys() {
     local foreign
     foreign=$(gpg --list-keys --with-colons 2>/dev/null \
-        | awk -F: '$1=="uid" && $10 !~ /@gpg-attest\.org/ {count++} END {print count+0}')
+        | awk -F: '$1=="uid" && $10 !~ /@gpg-attest\.org/ && $10 !~ /@test\.local/ {count++} END {print count+0}')
     [ "$foreign" -gt 0 ]
 }
 
 has_test_keys() {
     gpg --list-keys test@gpg-attest.org >/dev/null 2>&1 &&
-    gpg --list-keys no-reply@gpg-attest.org >/dev/null 2>&1
+    gpg --list-keys no-reply@gpg-attest.org >/dev/null 2>&1 &&
+    gpg --list-keys revoke-nodate@test.local >/dev/null 2>&1 &&
+    gpg --list-keys revoked-server@gpg-attest.org >/dev/null 2>&1
 }
 
 reset_gpg() {
@@ -71,6 +73,46 @@ Expire-Date: 2y
 EOF
     echo "Test user GPG key created:"
     gpg --list-keys test@gpg-attest.org
+
+    # Key for cert-revocation tests: test@gpg-attest.org signs then revokes
+    # its certification on this key.
+    gpg --pinentry-mode loopback --passphrase '' --batch --gen-key <<'EOF'
+Key-Type: RSA
+Key-Length: 4096
+Name-Real: Revoke Test
+Name-Email: revoke-nodate@test.local
+Expire-Date: 2y
+%commit
+EOF
+    # Certify the key with test@gpg-attest.org
+    gpg --batch --yes --pinentry-mode loopback --passphrase '' \
+        -u test@gpg-attest.org --sign-key revoke-nodate@test.local
+    # Revoke that certification (scripted interactive):
+    #   n = skip self-sig, y = select test@ cert, y = confirm selection,
+    #   0 = no reason, empty desc, y = confirm revocation
+    printf 'n\ny\ny\n0\n\ny\n' | gpg --no-tty --pinentry-mode loopback --passphrase '' \
+        --command-fd 0 --edit-key revoke-nodate@test.local revsig save
+    echo "Cert-revocation test key created:"
+    gpg --list-sigs revoke-nodate@test.local
+
+    # Revoked server key for key-revocation tests: cert-only master + sign subkey, then revoked.
+    gpg --pinentry-mode loopback --passphrase '' --batch --gen-key <<'EOF'
+Key-Type: RSA
+Key-Length: 4096
+Key-Usage: cert
+Subkey-Type: RSA
+Subkey-Length: 4096
+Subkey-Usage: sign
+Name-Real: Revoked Server Key
+Name-Email: revoked-server@gpg-attest.org
+Expire-Date: 2y
+%commit
+EOF
+    # Revoke the key itself (scripted interactive: y = confirm, 0 = no reason, empty desc, y = confirm)
+    printf 'y\n0\n\ny\n' | gpg --no-tty --pinentry-mode loopback --passphrase '' \
+        --command-fd 0 --gen-revoke revoked-server@gpg-attest.org | gpg --import
+    echo "Revoked server test key created:"
+    gpg --list-keys revoked-server@gpg-attest.org
 }
 
 if has_foreign_keys; then

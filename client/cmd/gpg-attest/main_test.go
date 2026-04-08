@@ -8,8 +8,25 @@ import (
 	"strings"
 	"testing"
 
+	"gpg-attest.org/client/internal/gpg"
 	"gpg-attest.org/client/internal/protocol"
 )
+
+// lookupFingerprint returns the primary key fingerprint for the given email.
+func lookupFingerprint(t *testing.T, email string) string {
+	t.Helper()
+	keys, err := gpg.ListKeys()
+	if err != nil {
+		t.Fatalf("ListKeys() error: %v", err)
+	}
+	for _, k := range keys {
+		if strings.Contains(k.UID, email) {
+			return k.Fingerprint
+		}
+	}
+	t.Fatalf("key for %s not found", email)
+	return ""
+}
 
 // Tests for handle() cover all validation paths that do NOT require gpg.
 
@@ -256,7 +273,7 @@ func TestHandle_verify_certRevoked_timestampBefore(t *testing.T) {
 				Timestamp:   "2020-01-01T00:00:00Z", // well before revocation
 			},
 		},
-		VerifierKeyIDs: []string{"D781B9DF3744931B5015A72E8E1323F3A105D1B7"}, // test@gpg-attest.org
+		VerifierKeyIDs: []string{lookupFingerprint(t, "test@gpg-attest.org")},
 	}
 	verifyResp := handle(verifyReq)
 	if !verifyResp.OK {
@@ -294,7 +311,7 @@ func TestHandle_verify_certRevoked_timestampAfter(t *testing.T) {
 				Timestamp:   "2099-01-01T00:00:00Z", // well after revocation
 			},
 		},
-		VerifierKeyIDs: []string{"D781B9DF3744931B5015A72E8E1323F3A105D1B7"},
+		VerifierKeyIDs: []string{lookupFingerprint(t, "test@gpg-attest.org")},
 	}
 	verifyResp := handle(verifyReq)
 	if !verifyResp.OK {

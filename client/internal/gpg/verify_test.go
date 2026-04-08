@@ -1,9 +1,90 @@
 package gpg
 
 import (
+	"bytes"
+	"os/exec"
 	"strings"
 	"testing"
 )
+
+// lookupFingerprint returns the primary key fingerprint for the given email.
+func lookupFingerprint(t *testing.T, email string) string {
+	t.Helper()
+	keys, err := ListKeys()
+	if err != nil {
+		t.Fatalf("ListKeys() error: %v", err)
+	}
+	for _, k := range keys {
+		if strings.Contains(k.UID, email) {
+			return k.Fingerprint
+		}
+	}
+	t.Fatalf("key for %s not found", email)
+	return ""
+}
+
+// lookupFingerprintRaw returns the primary key fingerprint for the given email
+// by parsing gpg output directly, including revoked keys that ListKeys() filters out.
+func lookupFingerprintRaw(t *testing.T, email string) string {
+	t.Helper()
+	cmd := exec.Command("gpg", "--list-keys", "--with-colons", email)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("gpg --list-keys %s: %v: %s", email, err, stderr.String())
+	}
+	inPub := false
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		fields := strings.Split(line, ":")
+		if len(fields) < 2 {
+			continue
+		}
+		if fields[0] == "pub" {
+			inPub = true
+			continue
+		}
+		if fields[0] == "fpr" && inPub && len(fields) > 9 {
+			return fields[9]
+		}
+		if fields[0] == "sub" || fields[0] == "ssb" {
+			inPub = false
+		}
+	}
+	t.Fatalf("no fingerprint found for %s", email)
+	return ""
+}
+
+// lookupSubkeyFingerprint returns the first subkey fingerprint for the given email.
+func lookupSubkeyFingerprint(t *testing.T, email string) string {
+	t.Helper()
+	cmd := exec.Command("gpg", "--list-keys", "--with-colons", email)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("gpg --list-keys %s: %v: %s", email, err, stderr.String())
+	}
+	inSub := false
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		fields := strings.Split(line, ":")
+		if len(fields) < 2 {
+			continue
+		}
+		if fields[0] == "sub" || fields[0] == "ssb" {
+			inSub = true
+			continue
+		}
+		if fields[0] == "fpr" && inSub && len(fields) > 9 {
+			return fields[9]
+		}
+		if fields[0] == "pub" || fields[0] == "sec" {
+			inSub = false
+		}
+	}
+	t.Fatalf("no subkey fingerprint found for %s", email)
+	return ""
+}
 
 func TestVerify_validSignature(t *testing.T) {
 	payload := []byte("test payload for verify")
@@ -139,8 +220,8 @@ func TestParseStatusFd_badSig(t *testing.T) {
 
 func TestGetCertRevocationDate_revoked(t *testing.T) {
 	// revoke-nodate@test.local had its certification by test@gpg-attest.org revoked
-	const subjectFpr = "7F5B5CB8B2F24155A9AC345E3EB81DCD4E9F8B7F"
-	const revokerFpr = "D781B9DF3744931B5015A72E8E1323F3A105D1B7"
+	subjectFpr := lookupFingerprint(t, "revoke-nodate@test.local")
+	revokerFpr := lookupFingerprint(t, "test@gpg-attest.org")
 
 	revoked, revokedAt, err := GetCertRevocationDate(subjectFpr, revokerFpr)
 	if err != nil {
@@ -156,8 +237,8 @@ func TestGetCertRevocationDate_revoked(t *testing.T) {
 
 func TestGetCertRevocationDate_notRevoked(t *testing.T) {
 	// test@gpg-attest.org has NOT had its certification revoked by anyone
-	const subjectFpr = "D781B9DF3744931B5015A72E8E1323F3A105D1B7"
-	const revokerFpr = "7F5B5CB8B2F24155A9AC345E3EB81DCD4E9F8B7F"
+	subjectFpr := lookupFingerprint(t, "test@gpg-attest.org")
+	revokerFpr := lookupFingerprint(t, "revoke-nodate@test.local")
 
 	revoked, _, err := GetCertRevocationDate(subjectFpr, revokerFpr)
 	if err != nil {
@@ -169,7 +250,7 @@ func TestGetCertRevocationDate_notRevoked(t *testing.T) {
 }
 
 func TestGetKeyRevocationDate_revokedServerKey(t *testing.T) {
-	const serverFpr = "E185BC21E2DF31CE0C0934CA01C10B03BA05D4D6"
+	serverFpr := lookupFingerprintRaw(t, "revoked-server@gpg-attest.org")
 	revoked, revokedAt, err := GetKeyRevocationDate(serverFpr)
 	if err != nil {
 		t.Fatalf("GetKeyRevocationDate failed: %v", err)
@@ -186,7 +267,7 @@ func TestGetKeyRevocationDate_revokedServerKey(t *testing.T) {
 func TestGetKeyRevocationDate_revokedServerSubkey(t *testing.T) {
 	// When gpg --verify reports a subkey fingerprint, we need to find the
 	// master key's revocation via the subkey fingerprint
-	const subkeyFpr = "7D14CFACA16C8BD47704BC8555FE9FCB63E2A1B6"
+	subkeyFpr := lookupSubkeyFingerprint(t, "revoked-server@gpg-attest.org")
 	revoked, revokedAt, err := GetKeyRevocationDate(subkeyFpr)
 	if err != nil {
 		t.Fatalf("GetKeyRevocationDate (subkey) failed: %v", err)

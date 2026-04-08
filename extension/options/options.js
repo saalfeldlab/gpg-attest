@@ -14,7 +14,7 @@ const status = document.getElementById("status");
 async function load() {
   let keys = [];
   try {
-    const resp = await sendBg({ type: "list_keys" });
+    const resp = await sendBg({ type: "list_secret_keys" });
     if (resp.ok && resp.keys) {
       keys = resp.keys.filter(k => k.can_sign);
     }

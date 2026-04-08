@@ -10,7 +10,7 @@ import (
 	"gpg-attest.org/client/internal/protocol"
 )
 
-// ListKeys returns all non-revoked/expired keys from the user's GnuPG keystore.
+// ListKeys returns all non-revoked/expired public keys from the user's GnuPG keystore.
 // It runs `gpg --list-keys --with-colons` and parses the colon-delimited output.
 func ListKeys() ([]protocol.KeyInfo, error) {
 	cmd := exec.Command("gpg", "--list-keys", "--with-colons")
@@ -20,6 +20,21 @@ func ListKeys() ([]protocol.KeyInfo, error) {
 
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("gpg --list-keys: %w: %s", err, stderr.String())
+	}
+
+	return parseColons(stdout.Bytes()), nil
+}
+
+// ListSecretKeys returns all non-revoked/expired secret keys from the user's GnuPG keystore.
+// It runs `gpg --list-secret-keys --with-colons` and parses the colon-delimited output.
+func ListSecretKeys() ([]protocol.KeyInfo, error) {
+	cmd := exec.Command("gpg", "--list-secret-keys", "--with-colons")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("gpg --list-secret-keys: %w: %s", err, stderr.String())
 	}
 
 	return parseColons(stdout.Bytes()), nil
@@ -72,7 +87,7 @@ func parseColons(data []byte) []protocol.KeyInfo {
 		recType := fields[0]
 
 		switch recType {
-		case "pub":
+		case "pub", "sec":
 			flush()
 			cur = &pending{}
 			if len(fields) > 1 {

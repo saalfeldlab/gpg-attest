@@ -64,6 +64,18 @@ func handle(req *protocol.Request) *protocol.Response {
 			Keys: keys,
 		}
 
+	case "list_secret_keys":
+		keys, err := gpg.ListSecretKeys()
+		if err != nil {
+			log.Printf("list_secret_keys error: %v", err)
+			return errResp(req.ID, fmt.Sprintf("list_secret_keys: %v", err))
+		}
+		return &protocol.Response{
+			ID:   req.ID,
+			OK:   true,
+			Keys: keys,
+		}
+
 	case "sign":
 		if req.KeyID == "" {
 			return errResp(req.ID, "sign: key_id is required")
