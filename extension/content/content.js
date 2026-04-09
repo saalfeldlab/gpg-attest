@@ -198,6 +198,52 @@ function removeBadgeForTarget(el) {
   if (badgeId !== undefined) removeBadge(badgeId);
 }
 
+// --- Visible content rect (accounts for object-fit) ---
+
+function parsePosValue(val, availableSpace) {
+  if (val.endsWith('%')) return (parseFloat(val) / 100) * availableSpace;
+  if (val.endsWith('px')) return parseFloat(val);
+  if (val === 'left' || val === 'top') return 0;
+  if (val === 'right' || val === 'bottom') return availableSpace;
+  return availableSpace / 2;
+}
+
+function getVisibleContentRect(target) {
+  const elemRect = target.getBoundingClientRect();
+  if (target.tagName !== 'IMG' || !target.naturalWidth || !target.naturalHeight) {
+    return elemRect;
+  }
+  const style = getComputedStyle(target);
+  const fit = style.objectFit;
+  if (fit !== 'contain' && fit !== 'scale-down') return elemRect;
+  const natW = target.naturalWidth;
+  const natH = target.naturalHeight;
+  const elemW = elemRect.width;
+  const elemH = elemRect.height;
+  if (fit === 'scale-down' && natW <= elemW && natH <= elemH) return elemRect;
+  const scale = Math.min(elemW / natW, elemH / natH);
+  const contentW = natW * scale;
+  const contentH = natH * scale;
+  const pos = style.objectPosition;
+  let offsetX = (elemW - contentW) / 2;
+  let offsetY = (elemH - contentH) / 2;
+  if (pos) {
+    const parts = pos.split(/\s+/);
+    if (parts.length >= 2) {
+      offsetX = parsePosValue(parts[0], elemW - contentW);
+      offsetY = parsePosValue(parts[1], elemH - contentH);
+    }
+  }
+  return {
+    top:    elemRect.top + offsetY,
+    left:   elemRect.left + offsetX,
+    right:  elemRect.left + offsetX + contentW,
+    bottom: elemRect.top + offsetY + contentH,
+    width:  contentW,
+    height: contentH,
+  };
+}
+
 // --- Batched position updates ---
 
 let updateScheduled = false;
@@ -216,7 +262,7 @@ function updateAllBadgePositions() {
     if (!record.visible) continue;
     const target = record.targetRef.deref();
     if (!target) { removeBadge(badgeId); continue; }
-    const targetRect = target.getBoundingClientRect();
+    const targetRect = getVisibleContentRect(target);
     const hostRect = record.host.getBoundingClientRect();
     updates.push({
       badgeEl: record.badgeEl,
