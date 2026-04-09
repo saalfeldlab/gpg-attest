@@ -68,6 +68,9 @@ License: MIT
 URL:     https://gpg-attest.org
 Requires: gnupg2
 
+# Disable stripping — cross-compiled binaries can't be stripped by the host toolchain
+%define __strip /bin/true
+
 %description
 Native messaging host for the attestension browser extension.
 Bridges the browser to the local gpg binary so that private keys
