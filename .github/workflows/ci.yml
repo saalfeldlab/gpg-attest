@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  client-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.19'
+          cache-dependency-path: client/go.sum
+      - name: Provision GPG test keys
+        run: bash .devcontainer/init-gpg.sh
+      - name: Vet
+        run: cd client && go vet ./...
+      - name: Test
+        run: cd client && go test ./...
+
+  client-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.19'
+          cache-dependency-path: client/go.sum
+      - name: Cross-compile all platforms
+        run: cd client && make cross VERSION=ci
+      - name: Build deb package
+        run: cd client && make deb VERSION=ci
+
+  server-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: server/go.sum
+      - name: Install swag
+        run: go install github.com/swaggo/swag/cmd/swag@v1.16.6
+      - name: Build server
+        run: cd server && make build
+
+  extension-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build extension packages
+        run: cd extension && bash build.sh
+      - name: Verify artifacts
+        run: ls extension/build/attestension-chrome-*.zip extension/build/attestension-firefox-*.zip

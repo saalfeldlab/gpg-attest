@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "attestension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sign media elements via GnuPG and log signatures.",
   "permissions": ["nativeMessaging", "storage", "contextMenus"],
   "host_permissions": ["<all_urls>"],
