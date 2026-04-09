@@ -31,7 +31,7 @@ jobs:
       - name: Cross-compile all platforms
         run: cd client && make cross VERSION=ci
       - name: Build deb package
-        run: cd client && make deb VERSION=ci
+        run: cd client && make deb VERSION=0.1.1-ci
 
   server-build:
     runs-on: ubuntu-latest
