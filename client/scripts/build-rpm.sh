@@ -40,11 +40,11 @@ CHROME_MANIFEST_SRC="$REPO_ROOT/manifests/chrome/org.gpg_attest.client.json"
 rm -rf "$RPM_TOPDIR"
 mkdir -p "$RPM_TOPDIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
 
-# 2. Assemble payload in BUILDROOT
-BUILDROOT="$RPM_TOPDIR/BUILDROOT/gpg-attest-${VERSION}-1.${ARCH}"
-mkdir -p "$BUILDROOT/usr/bin"
-cp "$BINARY" "$BUILDROOT/usr/bin/gpg-attest"
-chmod 0755 "$BUILDROOT/usr/bin/gpg-attest"
+# 2. Assemble payload in a staging directory (rpmbuild wipes BUILDROOT during %install)
+PAYLOAD_DIR="$RPM_TOPDIR/PAYLOAD"
+mkdir -p "$PAYLOAD_DIR/usr/bin"
+cp "$BINARY" "$PAYLOAD_DIR/usr/bin/gpg-attest"
+chmod 0755 "$PAYLOAD_DIR/usr/bin/gpg-attest"
 
 # 3. Install native messaging manifests with real binary path
 install_manifest() {
@@ -54,13 +54,9 @@ install_manifest() {
   sed "s|BINARY_PATH_PLACEHOLDER|$SYSTEM_BINARY_PATH|g" "$src" > "$dest_dir/org.gpg_attest.client.json"
 }
 
-FIREFOX_MANIFEST_DIR="$BUILDROOT/usr/lib/mozilla/native-messaging-hosts"
-CHROMIUM_MANIFEST_DIR="$BUILDROOT/etc/chromium/native-messaging-hosts"
-CHROME_MANIFEST_DIR="$BUILDROOT/etc/opt/chrome/native-messaging-hosts"
-
-install_manifest "$FIREFOX_MANIFEST_SRC" "$FIREFOX_MANIFEST_DIR"
-install_manifest "$CHROME_MANIFEST_SRC"  "$CHROMIUM_MANIFEST_DIR"
-install_manifest "$CHROME_MANIFEST_SRC"  "$CHROME_MANIFEST_DIR"
+install_manifest "$FIREFOX_MANIFEST_SRC" "$PAYLOAD_DIR/usr/lib/mozilla/native-messaging-hosts"
+install_manifest "$CHROME_MANIFEST_SRC"  "$PAYLOAD_DIR/etc/chromium/native-messaging-hosts"
+install_manifest "$CHROME_MANIFEST_SRC"  "$PAYLOAD_DIR/etc/opt/chrome/native-messaging-hosts"
 
 # 4. Write spec file
 cat > "$RPM_TOPDIR/SPECS/gpg-attest.spec" <<EOF
@@ -78,7 +74,7 @@ Bridges the browser to the local gpg binary so that private keys
 never leave the GPG keyring.
 
 %install
-cp -a %{buildroot}/* %{buildroot}/ 2>/dev/null || true
+cp -a %{payload_dir}/* %{buildroot}/
 
 %post
 echo ""
@@ -99,6 +95,7 @@ EOF
 # 5. Build the RPM
 rpmbuild \
   --define "_topdir $RPM_TOPDIR" \
+  --define "payload_dir $PAYLOAD_DIR" \
   --define "_binary_payload w9.gzdio" \
   --target "$ARCH" \
   -bb "$RPM_TOPDIR/SPECS/gpg-attest.spec"
