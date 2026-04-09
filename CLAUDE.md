@@ -1,6 +1,6 @@
 # gpg-attest — Developer Reference
 
-This file covers architecture details, server internals, devcontainer infrastructure, and development workflows not in @README.md
+This file covers architecture details, server internals, devcontainer infrastructure, and development workflows not in [@README.md](README.md)
 
 ## Architecture
 
@@ -115,7 +115,7 @@ restarts.
 
 ### Automatic startup
 
-`.devcontainer/start-services.sh` is called by `postStartCommand` and is idempotent.
+`postStartCommand` runs `init-gpg.sh && start-caddy.sh && start-services.sh` (all in `.devcontainer/`). Each script is idempotent.
 
 ### Verifying the server is up
 
@@ -144,12 +144,6 @@ curl -k https://gpg-attest.org/api/v1/loginfo   # -k for self-signed cert in dev
 ### Pointing the extension at the local server
 
 Set `LOG_SERVER=https://gpg-attest.org` in your `.env` file (copy from `.env.example`).
-
-## Getting Started
-
-```bash
-cp .env.example .env
-```
 
 ## GPG keyring isolation
 
@@ -194,19 +188,7 @@ Leave this running in a separate terminal.
 
 ### 3. Open Firefox and load the extension
 
-```bash
-firefox &
-```
-
-In Firefox:
-
-1. Go to `about:debugging`
-2. Click **This Firefox** in the left sidebar
-3. Click **Load Temporary Add-on…**
-4. Navigate to `/workspace/extension/` and select `manifest.json`
-
-The extension is now active for this browser session. It must be reloaded after each
-Firefox restart (temporary add-on limitation).
+Load the extension as a temporary add-on (see [Installation](README.md#installation) in README).
 
 ### 4. Open the test page
 
@@ -214,12 +196,11 @@ Navigate to `http://localhost:8080` in Firefox.
 
 Open DevTools (F12) and switch to the **Console** tab.
 
-### 5. Sign an image
+### 5. Attest an image
 
-1. Right-click any image → browser context menu shows **Sign ✓**, **Sign ✗**, **Select signing key…**
-2. Click **Select signing key…** → key dialog appears → select `Test Signer <test@gpg-attest.org>` → **Save**
-3. Right-click the image again → click **Sign ✓**
-4. The Console prints the sha256 hash and PGP signature
+1. Right-click any image → the context menu shows five DCBS verdict items: **false**, **suspect**, **plausible**, **trusted**, **verified** (each with its DCBS icon)
+2. If no signing key is selected yet, the key dialog appears → select `Test Signer <test@gpg-attest.org>` → **Save**
+3. Click a verdict (e.g. **trusted**) → the Console prints the sha256 hash and PGP signature
 
 ### Reloading after code changes
 
@@ -243,52 +224,10 @@ A five-level classification for assessing the authenticity, accuracy, and correc
 
 ### Assessment Dimensions
 
-Two independent dimensions determine the overall level:
+The overall level reflects the **lower** of two independent scores:
 
-- **Provenance Integrity** — Is the content authentically from its claimed source? (signatures, metadata, chain of custody)
-- **Factual Accuracy** — Is what it states true? (cross-referencing, independent confirmation)
-
-The overall level reflects the **lower** of the two scores.
-
-### Decision Criteria by Level
-
-#### Level 1 — False
-
-- Contradicted by multiple authoritative sources
-- Provenance analysis reveals manipulation (deepfakes, doctored metadata, forgery)
-- Fails logical or factual consistency
-- **Action:** Reject. Do not rely on for any purpose.
-
-#### Level 2 — Suspect
-
-- Anonymous or untraceable origin
-- No cryptographic signature
-- Single uncorroborated source; extraordinary claims
-- Not provably false, but insufficient evidence for reliability
-- **Action:** Investigate further. Do not use for decisions.
-
-#### Level 3 — Plausible
-
-- Source recognizable but not fully verified
-- Partial corroboration (one independent source, or metadata checks pass)
-- Minor inconsistencies or gaps may exist
-- **Action:** Use provisionally with caveats. Suitable for working hypotheses.
-
-#### Level 4 — Trusted
-
-- Multiple independent, credible sources confirm
-- Origin identifiable and reputable
-- Technical integrity checks pass (valid digital signatures, intact metadata, consistent timestamps)
-- Remaining uncertainty narrow and bounded
-- **Action:** Suitable for informed decision-making.
-
-#### Level 5 — Verified
-
-- End-to-end cryptographic proof of origin and integrity
-- Fully validated chain of trust
-- Factual claims independently confirmed by authoritative primary sources
-- Provenance transparent and auditable
-- **Action:** Treat as ground truth within the trust model.
+- **Provenance Integrity** — Is the content authentically from its claimed source?
+- **Factual Accuracy** — Is what it states true?
 
 ### Quick-Reference Summary
 
@@ -302,7 +241,7 @@ The overall level reflects the **lower** of the two scores.
 
 ### Badge Icons
 
-SVG source and pre-rendered PNGs live in `extension/icons/dcbs/`. Each icon is a 32×32 filled
+SVG source and pre-rendered PNGs live in `extension/icons/`. Each icon is a 32×32 filled
 circle with a 1 px white stroke and a white glyph:
 
 | File prefix        | Color  | Hex       | Glyph |
@@ -316,7 +255,7 @@ circle with a 1 px white stroke and a white glyph:
 PNGs are generated from the SVGs at sizes 16, 24, 32, 64, and 128 px using `rsvg-convert`:
 
 ```bash
-for svg in extension/icons/dcbs/dcbs-*.svg; do
+for svg in extension/icons/dcbs-*.svg; do
   base="${svg%.svg}"
   for size in 16 24 32 64 128; do
     rsvg-convert -w $size -h $size "$svg" -o "${base}-${size}.png"

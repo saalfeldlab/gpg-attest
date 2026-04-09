@@ -1,14 +1,28 @@
 **gpg-attest** is a browser extension + native messaging host + transparency log server that lets users attach GnuPG-signed attestations to digital content (identified by SHA-256) and record them on an append-only log. Anyone can query the log by artifact hash and evaluate attestations against their own trust model. The log timestamps each entry with its own signature so that attestations cannot be back-dated after key revocation.
 
-For any media element (currently only images), the browser extension queries the log servers for trusted attestations, and displays an icon over the media element.
+For any media element (currently only images), the browser extension queries the log servers for trusted attestations, and displays badges over the media element.
 
-This way, users can quickly know if an element is trusted by their trust network.
+This way, users can quickly know what their trust network thinks about the content.
 
 - **`extension/`** — [attestension](extension/): WebExtensions Manifest V3 browser extension (Chrome, Firefox). Attestation client and display — right-click images to attest them; query any configured log for existing attestations.
 - **`client/`** — gpg-attest: Native messaging host (Go). Bridges the browser to the local `gpg` binary; private keys never leave the GPG keyring.
 - **`server/`** — gpg-attest-server: Transparency log server (Go). Stores entries in a Trillian Merkle tree, indexes by artifact hash via Redis, signs each entry with its GPG key.
 
-The server covers core functionality targeted by [Rekor](https://docs.sigstore.dev/logging/overview/) and uses the same underlying technology (Trillian). The intended production path is a self-hosted Rekor instance extended with a custom `pgp-verdict` entry type that accepts `{artifact_hash, verdict, signer_keyid, pgp_signature}` without server-side verification, contributing that entry type upstream (or maintaining a minimal fork) would give this project Rekor's battle-tested sharding, indexing, and ops for free. This server exists as a prototype while that work is pending: no data filtering, no signature verification, no limits. As currently implemented, it will not survive high-frequency worldwide usage or targeted DoS attacks.
+## Digital Content Belief Scale (DCBS)
+
+Verdicts use a five-level scale modeled on PGP trust levels:
+
+| Level | Label         | Meaning                                                             |
+| ----- | ------------- | ------------------------------------------------------------------- |
+| 1     | **False**     | Contradicted by evidence; fabricated or manipulated                  |
+| 2     | **Suspect**   | Uncorroborated; significant red flags                               |
+| 3     | **Plausible** | Consistent with known facts; partially corroborated                 |
+| 4     | **Trusted**   | Multiple independent credible sources; valid signatures             |
+| 5     | **Verified**  | Cryptographic proof of origin; confirmed by authoritative sources   |
+
+## Transparency log and Rekor
+
+The server covers core functionality targeted by [Rekor](https://docs.sigstore.dev/logging/overview/) and uses the same underlying technology (Trillian). The intended production path would be a Rekor instance extended with a custom `pgp-verdict` entry type that accepts `{artifact_hash, verdict, signer_keyid, pgp_signature}` without server-side verification. Contributing that entry type upstream (or maintaining a minimal fork) would give this project Rekor's battle-tested sharding, indexing, and ops for free. This server exists as a prototype while that work is pending: no data filtering, no signature verification, no limits. As currently implemented, it will not survive high-frequency worldwide usage or targeted DoS attacks.
 
 The browser extension is designed to support additional attestation backends (e.g., EAS, Rekor), contributions welcome.
 
@@ -18,21 +32,21 @@ This is an experiment to test how we could create trust in decentralized data wi
 
 1. **Use decades-old established technology:** GPG, PGP web-of-trust, Merkle trees.
 2. **Small data footprint:** Sign and query hashes, not full data, don't check or test what's none of your business.
-3. **Minimum friction for users:** No complicated dialogs, stickers on trusted content, must just work and be super easy.
+3. **Minimum friction for users:** No complicated dialogs, badges on content, must just work and be super easy.
 4. **No centralized authorities:** Signatures hosted on untrusted mirrors are as good as anything, because testing depends on your local trust chain.
-5. **Good enough:** Don't solve all problems at once. E.g., trust chains of users believing in nonsense are as valid as serious actors, but you can know. Don't over-engineer, this is not a zero trust system but a useful hint that is hard to falsify, temporary mistakes are expected and can be revoked/updated.
+5. **Good enough:** Don't solve all problems at once. E.g., trust chains of users believing in nonsense are as valid as serious actors, but you can know and can decide whom to trust. Don't over-engineer, this is not a zero trust system but a useful hint that is hard to falsify, temporary mistakes are expected and can be revoked/updated.
 
 ### Known weaknesses
 
 There are likely many, we would love to hear your input!
 
-#### 1. Display of trust stickers over content can be falsified
+#### 1. Display of badges over content can be falsified
 
 Here are some ways to do that:
 
-- Providers can fake the stickers in the browser by showing images including such stickers. Once discovered, these images could be signed as untrusted which would paint over the fake stickers.
+- Providers can fake the badges in the browser by showing images including such badges. Once discovered, these images could be signed as untrusted which would paint over the fake badges.
 - This, in return, can be falsified by hosting images with ever changing binary signatures (recompress with random meta data tags), such that no record sticks. This requires self-hosting on a dedicated server, once copied into other sites (e.g. social media), the content becomes static and the signatures will stick.
-- A content provider could inject Javascript that tampers with the stickers and context menus. This depends on somebody hosting such Javascript and does not transfer to re-posting the content.
+- A content provider could inject Javascript that tampers with the badges and context menus. This depends on somebody hosting such Javascript and does not transfer to re-posting the content.
 
 #### 2. GPG key handling on device may be considered an inconvenience by those inclined to complain about stuff
 
@@ -52,15 +66,17 @@ We would prefer to build on the hardened Rekor Sigstore stack directly instead o
 
 ### Prerequisites
 
-| Component   | Requirement                       |
-| ----------- | --------------------------------- |
-| Extension   | No build step — plain JS/HTML/CSS |
-| Native host | Go ≥ 1.19, GNU Make               |
-| Server      | Go ≥ 1.23, GNU Make               |
+| Component   | Requirement                          |
+| ----------- | ------------------------------------ |
+| Extension   | No build required, plain JS/HTML/CSS |
+| Native host | Go ≥ 1.19, GNU Make                  |
+| Server      | Go ≥ 1.23, GNU Make                  |
 
 ### Extension (attestension)
 
-No build step. Load from the `extension/` directory directly (see [Installation](#installation)).
+Package and sign browser extensions with `extension/build.sh`.
+
+For testing, no build required, this is Javascript. Load from the `extension/` directory directly (see [Installation](#installation)).
 
 ### Native host (gpg-attest)
 
@@ -68,6 +84,7 @@ No build step. Load from the `extension/` directory directly (see [Installation]
 cd client
 make build          # host platform binary → build/gpg-attest
 make cross          # all platforms (linux/darwin/windows × amd64/arm64)
+make deb            # Debian package → build/gpg-attest_<version>_amd64.deb
 make test           # run test suite
 ```
 
@@ -78,7 +95,7 @@ cd server
 make build          # → build/gpg-attest-server
 ```
 
-The devcontainer starts all backing services (MariaDB, Trillian, Redis) and the server automatically on container start. To start manually:
+The devcontainer starts all backing services (MariaDB, Trillian, Redis) and the server automatically on container start and creates GPG test keys. To start manually:
 
 ```bash
 /workspace/.devcontainer/start-services.sh
@@ -111,6 +128,15 @@ make uninstall-linux
 ```
 
 Installs to `~/.local/bin/gpg-attest` and writes manifests for Firefox and Chromium/Chrome.
+
+**Linux (.deb package)**
+
+```bash
+cd client && make deb            # produces build/gpg-attest_<version>_amd64.deb
+sudo dpkg -i build/gpg-attest_*.deb
+```
+
+Installs to `/usr/bin/gpg-attest` with system-level manifests for Firefox and Chrome/Chromium.
 
 **macOS (user-level)**
 
@@ -182,6 +208,7 @@ Caddy is pre-installed in the devcontainer and starts automatically on container
 A production Caddyfile template is provided at `server/Caddyfile.production`. Caddy auto-provisions Let's Encrypt TLS certificates for real domains.
 
 Prerequisites:
+
 - DNS A/AAAA record pointing to your server
 - Ports 80 (ACME HTTP challenge) and 443 (HTTPS) open in the firewall
 
