@@ -31,7 +31,11 @@ jobs:
       - name: Cross-compile all platforms
         run: cd client && make cross VERSION=ci
       - name: Build deb package
-        run: cd client && make deb VERSION=0.1.1-ci
+        run: cd client && make deb VERSION=0.0.0-ci
+      - name: Install rpmbuild
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+      - name: Build rpm package
+        run: cd client && make rpm VERSION=0.0.0.ci
 
   server-build:
     runs-on: ubuntu-latest

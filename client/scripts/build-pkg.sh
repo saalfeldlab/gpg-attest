@@ -68,6 +68,13 @@ $(sed "s|BINARY_PATH_PLACEHOLDER|$SYSTEM_BINARY_PATH|g" "$CHROME_MANIFEST_SRC")
 EOF
 
 echo "gpg-attest native manifests installed."
+echo ""
+echo "  gpg-attest native messaging host installed."
+echo ""
+echo "  Install the browser extension:"
+echo "    Firefox: TODO_FIREFOX_ADDON_URL"
+echo "    Chrome:  TODO_CHROME_WEBSTORE_URL"
+echo ""
 POSTINSTALL
 chmod +x "$PKG_SCRIPTS/postinstall"
 echo "Wrote postinstall script: $PKG_SCRIPTS/postinstall"

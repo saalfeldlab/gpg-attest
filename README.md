@@ -103,7 +103,95 @@ The devcontainer starts all backing services (MariaDB, Trillian, Redis) and the 
 
 ## Installation
 
-### Extension (attestension)
+### 1. Browser extension (attestension)
+
+<!-- TODO: replace placeholder URLs once publicly listed -->
+
+**Firefox:** Install from [TODO_FIREFOX_ADDON_URL](about:blank)
+
+**Chrome / Chromium:** Install from [TODO_CHROME_WEBSTORE_URL](about:blank)
+
+For development or testing, see [Loading the extension from source](#loading-the-extension-from-source) below.
+
+### 2. Native host (gpg-attest)
+
+The native host bridges the browser extension to your local GnuPG keyring. Install it after the extension.
+
+**Linux (.deb — Debian, Ubuntu)**
+
+Download the `.deb` from the [latest release](../../releases/latest) and install:
+
+```bash
+sudo dpkg -i gpg-attest_<version>_amd64.deb
+```
+
+**Linux (.rpm — Fedora, RHEL, openSUSE)**
+
+Download the `.rpm` from the [latest release](../../releases/latest) and install:
+
+```bash
+sudo rpm -i gpg-attest-<version>-1.x86_64.rpm
+```
+
+**macOS (.pkg)**
+
+Download `gpg-attest-<version>.pkg` from the [latest release](../../releases/latest) and double-click to install, or:
+
+```bash
+sudo installer -pkg gpg-attest-<version>.pkg -target /
+```
+
+Prerequisite: GnuPG must be installed. The easiest way is via [Homebrew](https://brew.sh/):
+
+```bash
+brew install gnupg
+```
+
+**Windows**
+
+Download `gpg-attest-windows-amd64.exe` from the [latest release](../../releases/latest).
+
+Prerequisite: [Gpg4win](https://www.gpg4win.org/) must be installed (provides `gpg.exe`).
+
+Place the binary and register it for native messaging using the included PowerShell script:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 .\gpg-attest-windows-amd64.exe
+
+# Uninstall:
+powershell -ExecutionPolicy Bypass -File scripts\uninstall-windows.ps1
+```
+
+Installs to `%LOCALAPPDATA%\gpg-attest\` and registers manifest paths in `HKCU` for Firefox, Chrome, Edge, and Brave.
+
+### Building from source
+
+#### Native host
+
+```bash
+cd client
+make build          # host platform binary → build/gpg-attest
+make install        # auto-detects OS, installs binary + browser manifests
+make cross          # all platforms (linux/darwin/windows × amd64/arm64)
+make deb            # Debian package → build/gpg-attest_<version>_amd64.deb
+make rpm            # RPM package → build/gpg-attest-<version>-1.x86_64.rpm
+make pkg            # macOS package → build/gpg-attest.pkg (requires Xcode CLI tools)
+make test           # run test suite
+```
+
+User-level install (no package manager):
+
+```bash
+# Linux:
+cd client && make install
+make uninstall-linux
+
+# macOS:
+cd client && make install-macos
+make uninstall-macos
+```
+
+#### Loading the extension from source
 
 **Firefox**
 
@@ -114,63 +202,6 @@ The devcontainer starts all backing services (MariaDB, Trillian, Redis) and the 
 
 1. Go to `chrome://extensions` → enable **Developer mode**
 2. Click **Load unpacked** → select the `extension/` directory
-
-### Native host (gpg-attest)
-
-The native host must be installed so the browser can launch it via native messaging.
-
-**Linux**
-
-```bash
-cd client && make install
-# Uninstall:
-make uninstall-linux
-```
-
-Installs to `~/.local/bin/gpg-attest` and writes manifests for Firefox and Chromium/Chrome.
-
-**Linux (.deb package)**
-
-```bash
-cd client && make deb            # produces build/gpg-attest_<version>_amd64.deb
-sudo dpkg -i build/gpg-attest_*.deb
-```
-
-Installs to `/usr/bin/gpg-attest` with system-level manifests for Firefox and Chrome/Chromium.
-
-**macOS (user-level)**
-
-```bash
-cd client && make install-macos
-# Uninstall:
-make uninstall-macos
-```
-
-Installs to `~/Library/Application Support/gpg-attest/gpg-attest`, ad-hoc code-signs the binary (required by Chrome), and writes manifests for Firefox, Chrome, and Chromium.
-
-**macOS (system-wide .pkg)**
-
-```bash
-cd client && make pkg            # produces build/gpg-attest.pkg
-sudo installer -pkg build/gpg-attest.pkg -target /
-```
-
-Installs to `/usr/local/bin/gpg-attest` with system-level manifests.
-
-**Windows (PowerShell)**
-
-```powershell
-# Build Windows binary first (from Linux/macOS, or natively):
-cd client && make cross
-
-# Install:
-powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 .\build\gpg-attest-windows-amd64.exe
-
-# Uninstall:
-powershell -ExecutionPolicy Bypass -File scripts\uninstall-windows.ps1
-```
-
-Installs to `%LOCALAPPDATA%\gpg-attest\` and registers manifest paths in `HKCU` for Firefox, Chrome, Edge, and Brave.
 
 ### Server (gpg-attest-server)
 

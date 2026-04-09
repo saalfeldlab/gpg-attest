@@ -76,7 +76,21 @@ Section: utils
 Priority: optional
 EOF
 
-# 4. Write DEBIAN/postrm — remove empty manifest directories on purge
+# 4. Write DEBIAN/postinst — post-install guidance
+cat > "$DEB_ROOT/DEBIAN/postinst" <<'EOF'
+#!/bin/sh
+set -e
+echo ""
+echo "  gpg-attest native messaging host installed."
+echo ""
+echo "  Install the browser extension:"
+echo "    Firefox: TODO_FIREFOX_ADDON_URL"
+echo "    Chrome:  TODO_CHROME_WEBSTORE_URL"
+echo ""
+EOF
+chmod 0755 "$DEB_ROOT/DEBIAN/postinst"
+
+# 5. Write DEBIAN/postrm — remove empty manifest directories on purge
 cat > "$DEB_ROOT/DEBIAN/postrm" <<'EOF'
 #!/bin/sh
 set -e
@@ -90,7 +104,7 @@ fi
 EOF
 chmod 0755 "$DEB_ROOT/DEBIAN/postrm"
 
-# 5. Build the .deb
+# 6. Build the .deb
 OUTPUT_DEB="$BUILD_DIR/gpg-attest_${VERSION}_${ARCH}.deb"
 dpkg-deb --build "$DEB_ROOT" "$OUTPUT_DEB"
 
@@ -98,5 +112,5 @@ echo ""
 echo "Package built: $OUTPUT_DEB"
 echo "Install with:  sudo dpkg -i $OUTPUT_DEB"
 
-# 6. Clean up staging dir
+# 7. Clean up staging dir
 rm -rf "$DEB_ROOT"

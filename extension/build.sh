@@ -4,9 +4,42 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
 VERSION=$(jq -r '.version' "$SCRIPT_DIR/manifest.json")
+ADDON_GUID="attestension@gpg-attest.org"
 
 rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR/chrome" "$BUILD_DIR/firefox"
+mkdir -p "$BUILD_DIR"
+
+# --- Load AMO credentials (optional) ---
+ENV_FILE="$SCRIPT_DIR/../.env"
+JWT_ISSUER=""
+JWT_SECRET=""
+if [[ -f "$ENV_FILE" ]]; then
+  JWT_ISSUER=$(set -a && . "$ENV_FILE" && echo "${JWT_ISSUER:-}")
+  JWT_SECRET=$(set -a && . "$ENV_FILE" && echo "${JWT_SECRET:-}")
+fi
+
+# Generate a short-lived JWT for AMO API calls
+amo_jwt() {
+  local NOW=$(date +%s)
+  local HEADER=$(printf '{"alg":"HS256","typ":"JWT"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+  local PAYLOAD=$(printf '{"iss":"%s","iat":%s,"exp":%s}' "$JWT_ISSUER" "$NOW" "$((NOW + 300))" | base64 -w0 | tr '+/' '-_' | tr -d '=')
+  local SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -hmac "$JWT_SECRET" -binary | base64 -w0 | tr '+/' '-_' | tr -d '=')
+  echo "${HEADER}.${PAYLOAD}.${SIG}"
+}
+
+# --- Try to download an existing signed .xpi from AMO ---
+XPI_READY=false
+if [[ -n "$JWT_ISSUER" && -n "$JWT_SECRET" ]]; then
+  echo "Checking AMO for existing signed version ${VERSION}..."
+  AMO_API="https://addons.mozilla.org/api/v5/addons/addon/${ADDON_GUID}/versions/v${VERSION}/"
+  FILE_URL=$(curl -sf -H "Authorization: JWT $(amo_jwt)" "$AMO_API" | jq -r '.file.url // empty') || true
+
+  if [[ -n "$FILE_URL" ]]; then
+    curl -sfL -H "Authorization: JWT $(amo_jwt)" "$FILE_URL" -o "$BUILD_DIR/attestension-firefox-${VERSION}.xpi"
+    echo "Downloaded existing signed .xpi to $BUILD_DIR/attestension-firefox-${VERSION}.xpi"
+    XPI_READY=true
+  fi
+fi
 
 # Files to package (everything except build artifacts and the shared manifest)
 copy_common() {
@@ -17,47 +50,40 @@ copy_common() {
   cp -r "$SCRIPT_DIR/options" "$dest/"
 }
 
-# --- Chrome manifest ---
-# Remove Gecko-only fields: browser_specific_settings, background.scripts
+# --- Chrome package ---
+mkdir -p "$BUILD_DIR/chrome"
 jq 'del(.browser_specific_settings) | del(.background.scripts)' \
   "$SCRIPT_DIR/manifest.json" > "$BUILD_DIR/chrome/manifest.json"
-
 copy_common "$BUILD_DIR/chrome"
-
 (cd "$BUILD_DIR/chrome" && zip -rq "../attestension-chrome-${VERSION}.zip" .)
 echo "Built $BUILD_DIR/attestension-chrome-${VERSION}.zip"
 
-# --- Firefox manifest ---
-# Remove Chrome-only field: background.service_worker
-jq 'del(.background.service_worker)' \
-  "$SCRIPT_DIR/manifest.json" > "$BUILD_DIR/firefox/manifest.json"
+# --- Firefox package + signing ---
+if [[ "$XPI_READY" == true ]]; then
+  echo "Skipping Firefox build — already have signed .xpi"
+else
+  mkdir -p "$BUILD_DIR/firefox"
+  jq 'del(.background.service_worker)' \
+    "$SCRIPT_DIR/manifest.json" > "$BUILD_DIR/firefox/manifest.json"
+  copy_common "$BUILD_DIR/firefox"
+  (cd "$BUILD_DIR/firefox" && zip -rq "../attestension-firefox-${VERSION}.zip" .)
+  echo "Built $BUILD_DIR/attestension-firefox-${VERSION}.zip"
 
-copy_common "$BUILD_DIR/firefox"
-
-(cd "$BUILD_DIR/firefox" && zip -rq "../attestension-firefox-${VERSION}.zip" .)
-echo "Built $BUILD_DIR/attestension-firefox-${VERSION}.zip"
-
-# --- Sign Firefox extension via AMO (optional) ---
-ENV_FILE="$SCRIPT_DIR/../.env"
-if [[ -f "$ENV_FILE" ]]; then
-  # Source .env in a subshell to avoid leaking secrets into the environment
-  JWT_ISSUER=$(set -a && . "$ENV_FILE" && echo "$JWT_ISSUER")
-  JWT_SECRET=$(set -a && . "$ENV_FILE" && echo "$JWT_SECRET")
-
-  if [[ -n "${JWT_ISSUER:-}" && -n "${JWT_SECRET:-}" ]]; then
+  if [[ -n "$JWT_ISSUER" && -n "$JWT_SECRET" ]]; then
     echo "Signing Firefox extension via AMO..."
-    npx web-ext sign \
+    if npx web-ext sign \
       --source-dir "$BUILD_DIR/firefox" \
       --artifacts-dir "$BUILD_DIR" \
       --api-key="$JWT_ISSUER" \
       --api-secret="$JWT_SECRET" \
-      --channel=unlisted
-    echo "Signed .xpi written to $BUILD_DIR/"
+      --channel=unlisted; then
+      echo "Signed .xpi written to $BUILD_DIR/"
+    else
+      echo "Warning: could not sign extension via AMO — release will not include signed Firefox extension"
+    fi
   else
-    echo "Skipping Firefox signing: JWT_ISSUER and/or JWT_SECRET not set in .env"
+    echo "Skipping Firefox signing: AMO credentials not set"
   fi
-else
-  echo "Skipping Firefox signing: .env not found"
 fi
 
 # Cleanup staging directories

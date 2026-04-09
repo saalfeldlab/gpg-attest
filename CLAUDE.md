@@ -97,6 +97,34 @@ trusts and alert them: "Carol revoked her certification on Alice — you still t
 independently." The user would then decide whether to revoke their own certification. This
 is independent of the verification pipeline and does not gate badge display.
 
+## Release & Packaging
+
+Releases are triggered by pushing a `v*` tag. CI builds installation packages for each platform
+— no raw binaries are released (except Windows, which has no native installer format).
+
+| Platform | Format | GPG dependency |
+| -------- | ------ | -------------- |
+| Debian/Ubuntu | `.deb` | `gnupg` (declared in `Depends:`) |
+| Fedora/RHEL | `.rpm` | `gnupg2` (declared in `Requires:`) |
+| macOS | `.pkg` | user must install via Homebrew (`brew install gnupg`) |
+| Windows | raw `.exe` | user must install [Gpg4win](https://www.gpg4win.org/) |
+
+### Browser extension is NOT bundled in client packages
+
+Firefox Snap (Ubuntu default since 22.04) runs in a sandbox that cannot see system-wide
+extension paths (`/usr/lib/mozilla/extensions/`). Bundling the `.xpi` into the deb would only
+work for deb-installed Firefox, making it fragile and confusing. Instead, all packages print
+a post-install message with links to install the extension from the browser stores.
+
+**Placeholder URLs**: `TODO_FIREFOX_ADDON_URL` and `TODO_CHROME_WEBSTORE_URL` appear in
+`build-deb.sh`, `build-rpm.sh`, `build-pkg.sh`, and `README.md`. Replace them once the
+extensions are publicly listed on AMO and Chrome Web Store.
+
+### RPM note
+
+The RPM spec uses `Requires: gnupg2` because that is the package name on Fedora/RHEL.
+Debian/Ubuntu use `gnupg` instead. Both provide the `gpg` binary.
+
 ## Infrastructure (devcontainer)
 
 The devcontainer runs the backing services automatically on every container start.
