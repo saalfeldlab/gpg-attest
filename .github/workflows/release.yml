@@ -42,10 +42,10 @@ jobs:
           node-version: '20'
       - name: Write .env for AMO signing
         env:
-          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: |
-          printf 'JWT_ISSUER=%s\nJWT_SECRET=%s\n' "$AMO_JWT_ISSUER" "$AMO_JWT_SECRET" > .env
+          printf 'JWT_ISSUER=%s\nJWT_SECRET=%s\n' "$JWT_ISSUER" "$JWT_SECRET" > .env
       - name: Build and sign extension packages
         run: cd extension && bash build.sh
       - name: Upload extension artifacts
