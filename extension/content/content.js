@@ -135,6 +135,10 @@ const DIALOG_CSS = `
   margin: 0;
   cursor: pointer;
 }
+#attest-dialog label img.attest-verdict-icon {
+  width: 16px;
+  height: 16px;
+}
 .attest-category {
   display: flex;
   flex-direction: column;
@@ -276,6 +280,10 @@ async function openAttestDialog(imageUrl) {
   authorshipInput.name = 'authorship';
   authorshipInput.value = 'my-work';
   authorshipCheck.appendChild(authorshipInput);
+  const authorshipIcon = document.createElement('img');
+  authorshipIcon.className = 'attest-verdict-icon';
+  authorshipIcon.src = chrome.runtime.getURL('icons/authorship-my-work-16.png');
+  authorshipCheck.appendChild(authorshipIcon);
   authorshipCheck.appendChild(document.createTextNode('I created this'));
   if (before.authorship) authorshipInput.checked = true;
   authorshipDiv.appendChild(authorshipCheck);
@@ -294,6 +302,10 @@ async function openAttestDialog(imageUrl) {
   methodInput.name = 'method';
   methodInput.value = 'ai-generated';
   methodCheck.appendChild(methodInput);
+  const methodIcon = document.createElement('img');
+  methodIcon.className = 'attest-verdict-icon';
+  methodIcon.src = chrome.runtime.getURL('icons/method-ai-generated-16.png');
+  methodCheck.appendChild(methodIcon);
   methodCheck.appendChild(document.createTextNode('AI-generated'));
   if (before.method) methodInput.checked = true;
   methodDiv.appendChild(methodCheck);
@@ -331,6 +343,10 @@ async function openAttestDialog(imageUrl) {
       }
     });
     radioLabel.appendChild(radio);
+    const radioIcon = document.createElement('img');
+    radioIcon.className = 'attest-verdict-icon';
+    radioIcon.src = chrome.runtime.getURL(`icons/authenticity-${value}-16.png`);
+    radioLabel.appendChild(radioIcon);
     radioLabel.appendChild(document.createTextNode(label));
     authDiv.appendChild(radioLabel);
   }
