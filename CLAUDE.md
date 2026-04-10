@@ -274,16 +274,18 @@ image (one per category), stacked horizontally using 16px icons.
 
 ### Badge Icons
 
-SVG source and pre-rendered PNGs live in `extension/icons/`. Each icon is a 32×32 filled
-circle with a 1 px white stroke and a white glyph:
+SVG source and pre-rendered PNGs live in `extension/icons/`. Each icon is a 32×32 symbol
+with white stroke outline, drawn as SVG paths/polygons (no fonts). Area shapes (star,
+triangle) use solid fill + white stroke. Line shapes (checkmark, tilde, times) use a
+two-layer stroke: thicker white underneath, thinner colored on top.
 
-| File prefix              | Color  | Hex       | Glyph |
-| ------------------------ | ------ | --------- | ----- |
-| `authorship-my-work`     | Blue   | `#1565C0` | ✎     |
-| `method-ai-generated`    | Purple | `#6A1B9A` | ⚙     |
-| `authenticity-authentic` | Teal   | `#00796B` | ✓     |
-| `authenticity-satire`    | Amber  | `#F57F17` | ☺     |
-| `authenticity-misleading`| Red    | `#C62828` | ⚠     |
+| File prefix              | Shape     | Color  | Hex       |
+| ------------------------ | --------- | ------ | --------- |
+| `authorship-my-work`     | ★ star    | Green  | `#2E7D32` |
+| `method-ai-generated`    | △ triangle| Blue   | `#1565C0` |
+| `authenticity-authentic` | ✓ check   | Green  | `#2E7D32` |
+| `authenticity-satire`    | ~ tilde   | Amber  | `#F57F17` |
+| `authenticity-misleading`| ✕ times   | Red    | `#C62828` |
 
 PNGs are generated from the SVGs at sizes 16, 24, 32, 64, and 128 px using `rsvg-convert`:
 

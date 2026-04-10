@@ -496,7 +496,7 @@ const bgUrlToElements = new Map(); // url -> Set<Element>
 
 // --- Per-image badge overlays (horizontal 16px badges, one per category) ---
 
-const BADGE_CSS = '.attest-badge{position:fixed;top:0;left:0;width:16px;height:16px;pointer-events:none;}';
+const BADGE_CSS = '.attest-badge{position:fixed;top:0;left:0;width:12px;height:12px;pointer-events:none;}';
 
 const badgeRegistry = new Map();       // badgeId -> { targetRef, badgeEl, host, visible, category }
 const targetToBadges = new WeakMap();  // Element -> Map<category, badgeId>
@@ -536,7 +536,7 @@ function createBadges(targetEl, categories) {
     const iconFile = info.icon;
     if (!iconFile) { catIndex++; continue; }
 
-    const iconUrl = chrome.runtime.getURL(`icons/${iconFile}-16.png`);
+    const iconUrl = chrome.runtime.getURL(`icons/${iconFile}-12.png`);
     const title = `${cat}: ${info.verdict} (${info.signers} signer${info.signers > 1 ? 's' : ''})`;
 
     const existingBadgeId = badgeMap.get(cat);
@@ -700,7 +700,7 @@ function updateAllBadgePositions() {
     updates.push({
       badgeEl: record.badgeEl,
       top: targetRect.top - hostRect.top + 2,
-      left: targetRect.right - hostRect.left - 16 - 2 - (record.catIndex * 18),
+      left: targetRect.right - hostRect.left - 12 - 2 - (record.catIndex * 14),
     });
   }
   // Write phase — batch all transform writes
