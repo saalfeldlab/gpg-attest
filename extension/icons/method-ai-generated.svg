@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <polygon points="16,1 29.2,23.9 2.8,23.9"
-           fill="#1565C0" stroke="white" stroke-width="2.5" stroke-linejoin="miter"/>
+  <circle cx="16" cy="16" r="14.5" fill="#FF0000" stroke="white" stroke-width="3"/>
+  <polygon points="16,9 22.7,20.6 9.3,20.6"
+           fill="white" stroke="white" stroke-width="2" stroke-linejoin="miter"/>
 </svg>
