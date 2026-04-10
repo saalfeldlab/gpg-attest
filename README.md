@@ -8,17 +8,17 @@ This way, users can quickly know what their trust network thinks about the conte
 - **`client/`** — gpg-attest: Native messaging host (Go). Bridges the browser to the local `gpg` binary; private keys never leave the GPG keyring.
 - **`server/`** — gpg-attest-server: Transparency log server (Go). Stores entries in a Trillian Merkle tree, indexes by artifact hash via Redis, signs each entry with its GPG key.
 
-## Digital Content Belief Scale (DCBS)
+## Verdict Categories
 
-Verdicts use a five-level scale modeled on PGP trust levels:
+Verdicts use three independent categories, each independently signable and revocable:
 
-| Level | Label         | Meaning                                                             |
-| ----- | ------------- | ------------------------------------------------------------------- |
-| 1     | **False**     | Contradicted by evidence; fabricated or manipulated                  |
-| 2     | **Suspect**   | Uncorroborated; significant red flags                               |
-| 3     | **Plausible** | Consistent with known facts; partially corroborated                 |
-| 4     | **Trusted**   | Multiple independent credible sources; valid signatures             |
-| 5     | **Verified**  | Cryptographic proof of origin; confirmed by authoritative sources   |
+| Category | Type | Verdicts | Meaning |
+| --- | --- | --- | --- |
+| **Authorship** | Toggle | `my-work` | "I created this" |
+| **Method** | Toggle | `ai-generated` | "AI was used to produce this" |
+| **Authenticity** | Exclusive scale | `authentic` / `satire` / `misleading` | Deception/intent spectrum |
+
+A signer can select any combination. No selection in a category means no claim about that dimension. The special verdict `revoke` withdraws a previous claim in a category.
 
 ## Transparency log and Rekor
 

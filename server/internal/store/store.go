@@ -20,6 +20,7 @@ type Entry struct {
 	UUID            string `json:"uuid"`
 	LogIndex        int64  `json:"log_index"`
 	ArtifactHash    string `json:"artifact_hash"`
+	Category        string `json:"category"`
 	Verdict         string `json:"verdict"`
 	SignerKeyID     string `json:"signer_keyid"`
 	Signature       string `json:"signature"`
@@ -32,6 +33,7 @@ type Entry struct {
 // sorted output (it marshals struct fields in declaration order).
 type sigPayload struct {
 	ArtifactHash    string `json:"artifact_hash"`
+	Category        string `json:"category"`
 	LogIndex        int64  `json:"log_index"`
 	ServerTimestamp string `json:"server_timestamp"`
 	Signature       string `json:"signature"`
@@ -70,6 +72,7 @@ func (s *Store) Append(ctx context.Context, e *Entry) error {
 	// Compute server signature over canonical payload (server_signature absent).
 	p := sigPayload{
 		ArtifactHash:    e.ArtifactHash,
+		Category:        e.Category,
 		LogIndex:        e.LogIndex,
 		ServerTimestamp: e.ServerTimestamp,
 		Signature:       e.Signature,

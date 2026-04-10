@@ -20,7 +20,7 @@ async function handleMessage(msg) {
     }
 
     case "sign": {
-      return handleSign(msg.url, msg.keyID, msg.verdict);
+      return handleSign(msg.url, msg.keyID, msg.category, msg.verdict);
     }
 
     case "get_key": {
@@ -35,6 +35,9 @@ async function handleMessage(msg) {
 
     case "get_verdicts":
       return handleGetVerdicts(msg.url);
+
+    case "get_my_verdicts":
+      return handleGetMyVerdicts(msg.url);
 
     case "get_log_url": {
       const result = await chrome.storage.local.get("logUrl");
@@ -51,20 +54,30 @@ async function handleMessage(msg) {
   }
 }
 
-const VERDICT_SCORE = {
-  false: 1,
-  suspect: 2,
-  plausible: 3,
-  trusted: 4,
-  verified: 5,
+const CATEGORIES = {
+  authorship: { type: "toggle", verdicts: ["my-work"] },
+  method: { type: "toggle", verdicts: ["ai-generated"] },
+  authenticity: {
+    type: "scale",
+    verdicts: ["authentic", "satire", "misleading"],
+  },
+};
+
+// Icon file prefix for each category+verdict (used by content script for badges)
+const VERDICT_ICONS = {
+  "authorship:my-work": "authorship-my-work",
+  "method:ai-generated": "method-ai-generated",
+  "authenticity:authentic": "authenticity-authentic",
+  "authenticity:satire": "authenticity-satire",
+  "authenticity:misleading": "authenticity-misleading",
 };
 
 let trustedKeysCache = null; // { keys: string[], fetchedAt: number }
 let serverKeyCache = null; // { fingerprint: string, importedAt: number }
-const verdictsCache = new Map();       // url -> { result, fetchedAt }
-const verdictsPending = new Map();     // url -> Promise<result>
-const VERDICT_TTL_OK   = 30 * 60 * 1000;  // 30 min for successful lookups
-const VERDICT_TTL_NULL =  5 * 60 * 1000;  // 5 min for null/empty lookups
+const verdictsCache = new Map(); // url -> { result, fetchedAt }
+const verdictsPending = new Map(); // url -> Promise<result>
+const VERDICT_TTL_OK = 30 * 60 * 1000; // 30 min for successful lookups
+const VERDICT_TTL_NULL = 5 * 60 * 1000; // 5 min for null/empty lookups
 const VERDICT_CACHE_MAX = 500;
 
 let trustedKeysPending = null;
@@ -127,7 +140,10 @@ async function ensureServerKeyImported() {
       if (!importResp.ok || !importResp.imported?.length) {
         throw new Error(importResp.error || "import_key failed");
       }
-      serverKeyCache = { fingerprint: importResp.imported[0], importedAt: Date.now() };
+      serverKeyCache = {
+        fingerprint: importResp.imported[0],
+        importedAt: Date.now(),
+      };
       return serverKeyCache.fingerprint;
     } finally {
       serverKeyPending = null;
@@ -143,7 +159,8 @@ function canonicalJSON(obj) {
 async function handleGetVerdicts(url) {
   const cached = verdictsCache.get(url);
   if (cached) {
-    const ttl = cached.result.level != null ? VERDICT_TTL_OK : VERDICT_TTL_NULL;
+    const hasVerdicts = Object.keys(cached.result.categories).length > 0;
+    const ttl = hasVerdicts ? VERDICT_TTL_OK : VERDICT_TTL_NULL;
     if (Date.now() - cached.fetchedAt < ttl) return cached.result;
     verdictsCache.delete(url);
   }
@@ -151,6 +168,8 @@ async function handleGetVerdicts(url) {
   if (verdictsPending.has(url)) return verdictsPending.get(url);
 
   const pending = (async () => {
+    const emptyResult = { categories: {} };
+
     function cacheAndReturn(result) {
       if (verdictsCache.size >= VERDICT_CACHE_MAX) {
         verdictsCache.delete(verdictsCache.keys().next().value);
@@ -162,7 +181,7 @@ async function handleGetVerdicts(url) {
     try {
       const response = await fetch(url);
       if (!response.ok) {
-        return cacheAndReturn({ level: null });
+        return cacheAndReturn(emptyResult);
       }
       const buffer = await response.arrayBuffer();
       const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
@@ -175,29 +194,31 @@ async function handleGetVerdicts(url) {
 
       const trustedFingerprints = await getTrustedFingerprints();
       if (trustedFingerprints.length === 0) {
-        return cacheAndReturn({ level: null });
+        return cacheAndReturn(emptyResult);
       }
 
       const entriesResp = await fetch(
         `${logServer}/api/v1/entries?hash=sha256:${sha256Hex}`,
       );
       if (!entriesResp.ok) {
-        return cacheAndReturn({ level: null });
+        return cacheAndReturn(emptyResult);
       }
       const entries = await entriesResp.json();
 
-      // Filter to trusted signers, keep latest entry per signer
-      const bySignerMap = new Map();
+      // Filter to trusted signers, keep latest entry per (signer, category)
+      const bySignerCategory = new Map(); // "signer:category" -> entry
       for (const entry of entries || []) {
+        if (!entry.category) continue; // skip legacy entries without category
         if (!trustedFingerprints.includes(entry.signer_keyid)) continue;
-        const existing = bySignerMap.get(entry.signer_keyid);
+        const key = `${entry.signer_keyid}:${entry.category}`;
+        const existing = bySignerCategory.get(key);
         if (!existing || entry.server_timestamp > existing.server_timestamp) {
-          bySignerMap.set(entry.signer_keyid, entry);
+          bySignerCategory.set(key, entry);
         }
       }
 
-      if (bySignerMap.size === 0) {
-        return cacheAndReturn({ level: null });
+      if (bySignerCategory.size === 0) {
+        return cacheAndReturn(emptyResult);
       }
 
       // Verify signatures: server timestamp signature + signer attestation signature
@@ -206,10 +227,10 @@ async function handleGetVerdicts(url) {
         serverFingerprint = await ensureServerKeyImported();
       } catch (e) {
         console.debug("[attestension] could not import server key:", e.message);
-        return cacheAndReturn({ level: null });
+        return cacheAndReturn(emptyResult);
       }
 
-      const entriesToVerify = [...bySignerMap.values()];
+      const entriesToVerify = [...bySignerCategory.values()];
       const verifyEntries = [];
       for (const entry of entriesToVerify) {
         // Server timestamp signature
@@ -218,6 +239,7 @@ async function handleGetVerdicts(url) {
           payload: btoa(
             canonicalJSON({
               artifact_hash: entry.artifact_hash,
+              category: entry.category,
               log_index: entry.log_index,
               server_timestamp: entry.server_timestamp,
               signature: entry.signature,
@@ -235,6 +257,7 @@ async function handleGetVerdicts(url) {
           payload: btoa(
             canonicalJSON({
               artifact_hash: entry.artifact_hash,
+              category: entry.category,
               signer_keyid: entry.signer_keyid,
               verdict: entry.verdict,
             }),
@@ -276,24 +299,45 @@ async function handleGetVerdicts(url) {
         }
       } else {
         console.debug("[attestension] verify failed:", verifyResp.error);
-        return cacheAndReturn({ level: null });
+        return cacheAndReturn(emptyResult);
       }
 
       if (verified.length === 0) {
-        return cacheAndReturn({ level: null });
+        return cacheAndReturn(emptyResult);
       }
 
-      const scores = verified
-        .map((e) => VERDICT_SCORE[e.verdict])
-        .filter((s) => s !== undefined);
-      if (scores.length === 0) {
-        return cacheAndReturn({ level: null });
+      // Aggregate per category: collect non-revoke verdicts from all trusted signers
+      const categories = {};
+      for (const cat of Object.keys(CATEGORIES)) {
+        const catEntries = verified.filter(
+          (e) => e.category === cat && e.verdict !== "revoke",
+        );
+        if (catEntries.length === 0) continue;
+
+        // For toggle categories, just report the verdict and signer count
+        // For scale categories, use plurality vote
+        const verdictCounts = {};
+        for (const e of catEntries) {
+          verdictCounts[e.verdict] = (verdictCounts[e.verdict] || 0) + 1;
+        }
+        let topVerdict = null;
+        let topCount = 0;
+        for (const [v, c] of Object.entries(verdictCounts)) {
+          if (c > topCount) {
+            topVerdict = v;
+            topCount = c;
+          }
+        }
+        categories[cat] = {
+          verdict: topVerdict,
+          signers: catEntries.length,
+          icon: VERDICT_ICONS[`${cat}:${topVerdict}`] || null,
+        };
       }
 
-      const level = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-      return cacheAndReturn({ level });
+      return cacheAndReturn({ categories });
     } catch (_) {
-      return cacheAndReturn({ level: null });
+      return cacheAndReturn(emptyResult);
     }
   })();
   verdictsPending.set(url, pending);
@@ -304,7 +348,56 @@ async function handleGetVerdicts(url) {
   }
 }
 
-async function handleSign(url, keyID, verdict) {
+async function handleGetMyVerdicts(url) {
+  const emptyResult = {
+    myVerdicts: { authorship: null, method: null, authenticity: null },
+  };
+  try {
+    const { selectedKeyID } = await chrome.storage.local.get("selectedKeyID");
+    if (!selectedKeyID) return emptyResult;
+
+    const response = await fetch(url);
+    if (!response.ok) return emptyResult;
+    const buffer = await response.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+    const sha256Hex = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    const { logUrl } = await chrome.storage.local.get("logUrl");
+    const logServer = logUrl || DEFAULT_LOG_SERVER;
+
+    const entriesResp = await fetch(
+      `${logServer}/api/v1/entries?hash=sha256:${sha256Hex}`,
+    );
+    if (!entriesResp.ok) return emptyResult;
+    const entries = await entriesResp.json();
+
+    // Keep latest entry per category for this user's key
+    const byCategory = {};
+    for (const entry of entries || []) {
+      if (!entry.category) continue;
+      if (entry.signer_keyid !== selectedKeyID) continue;
+      const existing = byCategory[entry.category];
+      if (!existing || entry.server_timestamp > existing.server_timestamp) {
+        byCategory[entry.category] = entry;
+      }
+    }
+
+    const myVerdicts = { authorship: null, method: null, authenticity: null };
+    for (const cat of Object.keys(myVerdicts)) {
+      const entry = byCategory[cat];
+      if (entry && entry.verdict !== "revoke") {
+        myVerdicts[cat] = entry.verdict;
+      }
+    }
+    return { myVerdicts };
+  } catch (_) {
+    return emptyResult;
+  }
+}
+
+async function handleSign(url, keyID, category, verdict) {
   // 1. Fetch image and compute SHA-256
   const response = await fetch(url);
   if (!response.ok)
@@ -318,6 +411,7 @@ async function handleSign(url, keyID, verdict) {
   // 2. Build canonical payload (keys sorted alphabetically, no whitespace)
   const canonicalPayload = canonicalJSON({
     artifact_hash: `sha256:${sha256Hex}`,
+    category,
     signer_keyid: keyID,
     verdict,
   });
@@ -339,6 +433,7 @@ async function handleSign(url, keyID, verdict) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       artifact_hash: `sha256:${sha256Hex}`,
+      category,
       verdict,
       signer_keyid: keyID,
       signature: nativeResp.signature,
@@ -357,45 +452,32 @@ async function handleSign(url, keyID, verdict) {
   return {
     ok: true,
     sha256: sha256Hex,
+    category,
     verdict,
     uuid: entry.uuid,
     logIndex: entry.log_index,
   };
 }
 
-const VERDICTS = ["false", "suspect", "plausible", "trusted", "verified"];
-
-// Register context menu items
+// Register a single "Attest..." context menu item
 function registerMenus() {
   chrome.contextMenus.removeAll(() => {
+    const item = {
+      id: "gpg-attest",
+      title: "Attest...",
+      contexts: ["all"],
+    };
     const isFirefox = !!chrome.runtime.getBrowserInfo;
     if (isFirefox) {
-      chrome.contextMenus.create({
-        id: "sig-attest",
-        title: "Attest",
-        icons: {
-          16: "icons/dcbs-2-suspect-16.png",
-          32: "icons/dcbs-2-suspect-32.png",
-        },
-        contexts: ["all"],
-      });
-    }
-    for (const v of VERDICTS) {
-      const level = VERDICT_SCORE[v];
-      const item = {
-        id: `sig-verdict-${v}`,
-        title: v,
-        icons: {
-          16: `icons/dcbs-${level}-${v}-16.png`,
-          32: `icons/dcbs-${level}-${v}-32.png`,
-        },
-        contexts: ["all"],
+      item.icons = {
+        16: "icons/authenticity-authentic-16.png",
+        32: "icons/authenticity-authentic-32.png",
       };
-      if (isFirefox) item.parentId = "sig-attest";
-      chrome.contextMenus.create(item);
     }
+    chrome.contextMenus.create(item);
   });
 }
+
 async function initDefaults() {
   const stored = await chrome.storage.local.get(["selectedKeyID", "logUrl"]);
   const updates = {};
@@ -435,37 +517,17 @@ async function getContextImageUrl(info, tabId) {
 }
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  const verdict = info.menuItemId.replace("sig-verdict-", "");
-  if (!VERDICTS.includes(verdict)) return;
-  const { selectedKeyID: keyID } =
-    await chrome.storage.local.get("selectedKeyID");
-  if (!keyID) {
-    chrome.tabs.sendMessage(tab.id, {
-      type: "sig_warn",
-      message:
-        "No key selected. Open extension options to choose a signing key.",
-    });
-    return;
-  }
+  if (info.menuItemId !== "gpg-attest") return;
   const imageUrl = await getContextImageUrl(info, tab.id);
   if (!imageUrl) {
     chrome.tabs.sendMessage(tab.id, {
-      type: "sig_warn",
+      type: "attest_warn",
       message: "No image found at click target.",
     });
     return;
   }
-  try {
-    const result = await handleSign(imageUrl, keyID, verdict);
-    chrome.tabs.sendMessage(tab.id, {
-      type: "sig_result",
-      url: imageUrl,
-      ...result,
-    });
-  } catch (err) {
-    chrome.tabs.sendMessage(tab.id, {
-      type: "sig_error",
-      message: err.message,
-    });
-  }
+  chrome.tabs.sendMessage(tab.id, {
+    type: "open_attest_dialog",
+    url: imageUrl,
+  });
 });

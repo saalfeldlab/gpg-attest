@@ -6,6 +6,7 @@ function isOwnResource(url) {
 
 function isOwnElement(el) {
   return el.dataset && el.dataset.attestBadge !== undefined ||
+         el.dataset && el.dataset.attestDialog !== undefined ||
          (el.tagName === 'IMG' && isOwnResource(el.src));
 }
 
@@ -87,10 +88,379 @@ function sendBg(msg) {
   });
 }
 
+// --- Attestation dialog ---
+
+let activeDialog = null;
+
+const DIALOG_CSS = `
+#attest-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#attest-dialog {
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #555;
+  border-radius: 8px;
+  padding: 20px 24px;
+  min-width: 360px;
+  max-width: 520px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+#attest-dialog h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #f0f0f0;
+}
+#attest-dialog label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+#attest-dialog input[type="checkbox"],
+#attest-dialog input[type="radio"] {
+  margin: 0;
+  cursor: pointer;
+}
+.attest-category {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.attest-category-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #999;
+  margin-top: 4px;
+}
+#attest-key-select {
+  width: 100%;
+  background: #2d2d2d;
+  color: #e0e0e0;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#attest-key-select:focus {
+  outline: none;
+  border-color: #888;
+}
+.attest-btn-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.attest-btn-row button {
+  background: #2d2d2d;
+  color: #e0e0e0;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 6px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.attest-btn-row button:hover {
+  background: #3a3a3a;
+  border-color: #888;
+}
+.attest-btn-row button.attest-sign-btn {
+  background: #1a6b3a;
+  border-color: #2a9b5a;
+  color: #fff;
+}
+.attest-btn-row button.attest-sign-btn:hover {
+  background: #1d8045;
+}
+.attest-btn-row button.attest-sign-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.attest-status {
+  font-size: 12px;
+  color: #888;
+  min-height: 16px;
+}
+.attest-status.error { color: #ef5350; }
+.attest-status.success { color: #66bb6a; }
+`;
+
+async function openAttestDialog(imageUrl) {
+  if (activeDialog) closeAttestDialog();
+
+  const host = document.createElement('div');
+  host.dataset.attestDialog = '';
+  host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;z-index:2147483646;';
+  const shadow = host.attachShadow({ mode: 'closed' });
+
+  const style = document.createElement('style');
+  style.textContent = DIALOG_CSS;
+  shadow.appendChild(style);
+
+  // Fetch keys and existing verdicts for this image
+  let keys = [];
+  let selectedKeyID = null;
+  let before = { authorship: null, method: null, authenticity: null };
+  try {
+    const [keysResp, keyResp, myVerdictsResp] = await Promise.all([
+      sendBg({ type: "list_secret_keys" }),
+      sendBg({ type: "get_key" }),
+      sendBg({ type: "get_my_verdicts", url: imageUrl }),
+    ]);
+    keys = (keysResp.keys || []).filter(k => k.can_sign);
+    selectedKeyID = keyResp.keyID;
+    if (myVerdictsResp && myVerdictsResp.myVerdicts) {
+      before = { ...before, ...myVerdictsResp.myVerdicts };
+    }
+  } catch (e) {
+    console.error("[attestension] failed to load keys:", e);
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'attest-dialog-overlay';
+
+  const dialog = document.createElement('div');
+  dialog.id = 'attest-dialog';
+
+  // Title
+  const title = document.createElement('h3');
+  title.textContent = 'Attest';
+  dialog.appendChild(title);
+
+  // Key selector
+  const keySelect = document.createElement('select');
+  keySelect.id = 'attest-key-select';
+  if (keys.length === 0) {
+    const opt = document.createElement('option');
+    opt.textContent = 'No signing keys available';
+    opt.disabled = true;
+    keySelect.appendChild(opt);
+  } else {
+    for (const k of keys) {
+      const opt = document.createElement('option');
+      opt.value = k.fingerprint;
+      opt.textContent = k.uid || k.fingerprint;
+      if (k.fingerprint === selectedKeyID) opt.selected = true;
+      keySelect.appendChild(opt);
+    }
+  }
+  dialog.appendChild(keySelect);
+
+  // Authorship category
+  const authorshipDiv = document.createElement('div');
+  authorshipDiv.className = 'attest-category';
+  const authorshipLabel = document.createElement('div');
+  authorshipLabel.className = 'attest-category-label';
+  authorshipLabel.textContent = 'Authorship';
+  authorshipDiv.appendChild(authorshipLabel);
+  const authorshipCheck = document.createElement('label');
+  const authorshipInput = document.createElement('input');
+  authorshipInput.type = 'checkbox';
+  authorshipInput.name = 'authorship';
+  authorshipInput.value = 'my-work';
+  authorshipCheck.appendChild(authorshipInput);
+  authorshipCheck.appendChild(document.createTextNode('I created this'));
+  if (before.authorship) authorshipInput.checked = true;
+  authorshipDiv.appendChild(authorshipCheck);
+  dialog.appendChild(authorshipDiv);
+
+  // Method category
+  const methodDiv = document.createElement('div');
+  methodDiv.className = 'attest-category';
+  const methodLabel = document.createElement('div');
+  methodLabel.className = 'attest-category-label';
+  methodLabel.textContent = 'Method';
+  methodDiv.appendChild(methodLabel);
+  const methodCheck = document.createElement('label');
+  const methodInput = document.createElement('input');
+  methodInput.type = 'checkbox';
+  methodInput.name = 'method';
+  methodInput.value = 'ai-generated';
+  methodCheck.appendChild(methodInput);
+  methodCheck.appendChild(document.createTextNode('AI-generated'));
+  if (before.method) methodInput.checked = true;
+  methodDiv.appendChild(methodCheck);
+  dialog.appendChild(methodDiv);
+
+  // Authenticity category (radio buttons)
+  const authDiv = document.createElement('div');
+  authDiv.className = 'attest-category';
+  const authLabel = document.createElement('div');
+  authLabel.className = 'attest-category-label';
+  authLabel.textContent = 'Authenticity';
+  authDiv.appendChild(authLabel);
+
+  const authValues = [
+    { value: 'authentic', label: 'Authentic' },
+    { value: 'satire', label: 'Satire' },
+    { value: 'misleading', label: 'Misleading' },
+  ];
+  const authRadios = [];
+  for (const { value, label } of authValues) {
+    const radioLabel = document.createElement('label');
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'authenticity';
+    radio.value = value;
+    authRadios.push(radio);
+    // Allow deselecting radio by clicking again
+    radio.addEventListener('click', () => {
+      if (radio._wasChecked) {
+        radio.checked = false;
+        radio._wasChecked = false;
+      } else {
+        authRadios.forEach(r => r._wasChecked = false);
+        radio._wasChecked = true;
+      }
+    });
+    radioLabel.appendChild(radio);
+    radioLabel.appendChild(document.createTextNode(label));
+    authDiv.appendChild(radioLabel);
+  }
+  // Pre-populate authenticity radio from existing verdict
+  if (before.authenticity) {
+    const match = authRadios.find(r => r.value === before.authenticity);
+    if (match) {
+      match.checked = true;
+      match._wasChecked = true;
+    }
+  }
+  dialog.appendChild(authDiv);
+
+  // Status line
+  const statusEl = document.createElement('div');
+  statusEl.className = 'attest-status';
+  dialog.appendChild(statusEl);
+
+  // Buttons
+  const btnRow = document.createElement('div');
+  btnRow.className = 'attest-btn-row';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', closeAttestDialog);
+  const signBtn = document.createElement('button');
+  signBtn.textContent = 'Sign';
+  signBtn.className = 'attest-sign-btn';
+  signBtn.disabled = keys.length === 0;
+  signBtn.addEventListener('click', async () => {
+    const keyID = keySelect.value;
+    if (!keyID) return;
+
+    // Save key selection
+    sendBg({ type: "set_key", keyID });
+
+    // Compute current UI state
+    const after = {
+      authorship: authorshipInput.checked ? 'my-work' : null,
+      method: methodInput.checked ? 'ai-generated' : null,
+      authenticity: (authRadios.find(r => r.checked) || {}).value || null,
+    };
+
+    // Diff before vs after to determine actions
+    const actions = [];
+    for (const cat of ['authorship', 'method', 'authenticity']) {
+      if (before[cat] === after[cat]) continue; // no change
+      if (after[cat] !== null) {
+        // New verdict or changed verdict (supersedes old)
+        actions.push({ category: cat, verdict: after[cat] });
+      } else {
+        // Was set, now unset → revoke
+        actions.push({ category: cat, verdict: 'revoke' });
+      }
+    }
+
+    if (actions.length === 0) {
+      statusEl.textContent = 'No changes.';
+      statusEl.className = 'attest-status';
+      return;
+    }
+
+    signBtn.disabled = true;
+    statusEl.textContent = 'Signing...';
+    statusEl.className = 'attest-status';
+
+    let successCount = 0;
+    for (const { category, verdict } of actions) {
+      try {
+        const result = await sendBg({
+          type: "sign",
+          url: imageUrl,
+          keyID,
+          category,
+          verdict,
+        });
+        if (result.ok) {
+          successCount++;
+          console.log(`[attestension] signed ${category}:${verdict} → ${result.uuid}`);
+        } else {
+          statusEl.textContent = result.error || 'Sign failed';
+          statusEl.className = 'attest-status error';
+          signBtn.disabled = false;
+          return;
+        }
+      } catch (err) {
+        statusEl.textContent = err.message;
+        statusEl.className = 'attest-status error';
+        signBtn.disabled = false;
+        return;
+      }
+    }
+
+    statusEl.textContent = `Signed ${successCount} verdict${successCount > 1 ? 's' : ''}.`;
+    statusEl.className = 'attest-status success';
+
+    // Refresh badges for this image
+    document.querySelectorAll("img").forEach(img => {
+      if (img.currentSrc === imageUrl || img.src === imageUrl) {
+        processedImages.delete(img);
+        processSingleImage(img);
+      }
+    });
+
+    setTimeout(closeAttestDialog, 800);
+  });
+  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(signBtn);
+  dialog.appendChild(btnRow);
+
+  overlay.appendChild(dialog);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeAttestDialog();
+  });
+  shadow.appendChild(overlay);
+  document.body.appendChild(host);
+
+  activeDialog = host;
+}
+
+function closeAttestDialog() {
+  if (activeDialog) {
+    activeDialog.remove();
+    activeDialog = null;
+  }
+}
+
 // --- Message listener ---
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type === "sig_result") {
+  if (msg.type === "attest_result") {
     document.querySelectorAll("img").forEach(img => {
       if (img.currentSrc === msg.url || img.src === msg.url) {
         processedImages.delete(img);
@@ -106,78 +476,127 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
       }
     }
+  } else if (msg.type === "open_attest_dialog") {
+    openAttestDialog(msg.url);
   } else if (msg.type === "get_context_image") {
     sendResponse(lastContextImageUrl);
-  } else if (msg.type === "sig_warn") {
+  } else if (msg.type === "attest_warn") {
     console.warn("[attestension]", msg.message);
-  } else if (msg.type === "sig_error") {
+  } else if (msg.type === "attest_error") {
     console.error("[attestension]", msg.message);
   }
 });
 
-// --- DCBS badge overlay ---
+// --- Multi-category badge overlay ---
 
-const DCBS_LABELS = ["", "false", "suspect", "plausible", "trusted", "verified"];
+const CATEGORY_ORDER = ["authorship", "method", "authenticity"];
 const processedImages = new WeakSet();
 const processedBackgrounds = new WeakSet();
 const bgUrlToElements = new Map(); // url -> Set<Element>
 
-// --- Per-image badge overlays (inserted into target's parent for correct stacking) ---
+// --- Per-image badge overlays (horizontal 16px badges, one per category) ---
 
-const BADGE_CSS = '.attest-badge{position:fixed;top:0;left:0;width:24px;height:24px;pointer-events:none;}';
+const BADGE_CSS = '.attest-badge{position:fixed;top:0;left:0;width:16px;height:16px;pointer-events:none;}';
 
-const badgeRegistry = new Map();       // badgeId → { targetRef, badgeEl, host, visible }
-const targetToBadgeId = new WeakMap(); // Element → badgeId
+const badgeRegistry = new Map();       // badgeId -> { targetRef, badgeEl, host, visible, category }
+const targetToBadges = new WeakMap();  // Element -> Map<category, badgeId>
 let nextBadgeId = 0;
 
-const cleanupRegistry = new FinalizationRegistry(badgeId => removeBadge(badgeId));
+const cleanupRegistry = new FinalizationRegistry(badgeIds => {
+  for (const badgeId of badgeIds) removeBadge(badgeId);
+});
 
-function createBadge(targetEl, level) {
-  const existing = targetToBadgeId.get(targetEl);
-  if (existing !== undefined) {
-    updateBadge(existing, level);
+function createBadges(targetEl, categories) {
+  const existing = targetToBadges.get(targetEl);
+
+  // Determine which categories have verdicts
+  const activeCats = CATEGORY_ORDER.filter(cat => categories[cat]);
+
+  if (activeCats.length === 0) {
+    if (existing) removeBadgesForTarget(targetEl);
     return;
   }
+
   if (!targetEl.parentElement) return;
 
-  const badgeId = nextBadgeId++;
-  const iconUrl = chrome.runtime.getURL(`icons/dcbs-${level}-${DCBS_LABELS[level]}-24.png`);
-  const title = `DCBS level ${level}: ${DCBS_LABELS[level]}`;
+  // Remove badges for categories no longer present
+  if (existing) {
+    const toRemove = [...existing.entries()].filter(([cat]) => !categories[cat]);
+    for (const [, badgeId] of toRemove) {
+      removeBadge(badgeId);
+    }
+  }
 
-  const badgeEl = document.createElement('img');
-  badgeEl.className = 'attest-badge';
-  badgeEl.src = iconUrl;
-  badgeEl.alt = title;
-  badgeEl.title = title;
-  badgeEl.style.display = 'none'; // hidden until IntersectionObserver confirms visibility
+  const badgeMap = existing || new Map();
+  if (!existing) targetToBadges.set(targetEl, badgeMap);
 
-  const host = document.createElement('div');
-  host.dataset.attestBadge = '';
-  host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;overflow:visible;pointer-events:none;';
-  const shadow = host.attachShadow({ mode: 'closed' });
-  const style = document.createElement('style');
-  style.textContent = BADGE_CSS;
-  shadow.appendChild(style);
-  shadow.appendChild(badgeEl);
-  targetEl.parentElement.appendChild(host);
+  let catIndex = 0;
+  for (const cat of activeCats) {
+    const info = categories[cat];
+    const iconFile = info.icon;
+    if (!iconFile) { catIndex++; continue; }
 
-  const record = { targetRef: new WeakRef(targetEl), badgeEl, host, visible: false };
-  badgeRegistry.set(badgeId, record);
-  targetToBadgeId.set(targetEl, badgeId);
+    const iconUrl = chrome.runtime.getURL(`icons/${iconFile}-16.png`);
+    const title = `${cat}: ${info.verdict} (${info.signers} signer${info.signers > 1 ? 's' : ''})`;
 
-  intersectionObs.observe(targetEl);
-  resizeObs.observe(targetEl);
-  cleanupRegistry.register(targetEl, badgeId);
-}
+    const existingBadgeId = badgeMap.get(cat);
+    if (existingBadgeId !== undefined) {
+      // Update existing badge
+      const record = badgeRegistry.get(existingBadgeId);
+      if (record) {
+        record.badgeEl.src = iconUrl;
+        record.badgeEl.alt = title;
+        record.badgeEl.title = title;
+        record.catIndex = catIndex;
+      }
+      catIndex++;
+      continue;
+    }
 
-function updateBadge(badgeId, level) {
-  const record = badgeRegistry.get(badgeId);
-  if (!record) return;
-  const iconUrl = chrome.runtime.getURL(`icons/dcbs-${level}-${DCBS_LABELS[level]}-24.png`);
-  const title = `DCBS level ${level}: ${DCBS_LABELS[level]}`;
-  record.badgeEl.src = iconUrl;
-  record.badgeEl.alt = title;
-  record.badgeEl.title = title;
+    // Create new badge
+    const badgeId = nextBadgeId++;
+    const badgeEl = document.createElement('img');
+    badgeEl.className = 'attest-badge';
+    badgeEl.src = iconUrl;
+    badgeEl.alt = title;
+    badgeEl.title = title;
+    badgeEl.style.display = 'none';
+
+    const host = document.createElement('div');
+    host.dataset.attestBadge = '';
+    host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;overflow:visible;pointer-events:none;';
+    const shadow = host.attachShadow({ mode: 'closed' });
+    const styleEl = document.createElement('style');
+    styleEl.textContent = BADGE_CSS;
+    shadow.appendChild(styleEl);
+    shadow.appendChild(badgeEl);
+    targetEl.parentElement.appendChild(host);
+
+    // If target already has other visible badges, this one should be visible too
+    const alreadyObserved = badgeMap.size > 0;
+    const isVisible = alreadyObserved && [...badgeMap.values()].some(
+      id => badgeRegistry.get(id)?.visible
+    );
+    if (isVisible) {
+      badgeEl.style.display = '';
+    }
+
+    const record = { targetRef: new WeakRef(targetEl), badgeEl, host, visible: isVisible, category: cat, catIndex };
+    badgeRegistry.set(badgeId, record);
+    badgeMap.set(cat, badgeId);
+
+    if (!alreadyObserved) {
+      // First badge for this target — set up observers
+      intersectionObs.observe(targetEl);
+      resizeObs.observe(targetEl);
+      cleanupRegistry.register(targetEl, [...badgeMap.values()]);
+    }
+
+    catIndex++;
+  }
+
+  // Always reposition after badge changes (additions, removals, reindexing)
+  scheduleUpdate();
 }
 
 function removeBadge(badgeId) {
@@ -187,15 +606,29 @@ function removeBadge(badgeId) {
   badgeRegistry.delete(badgeId);
   const target = record.targetRef.deref();
   if (target) {
-    targetToBadgeId.delete(target);
-    intersectionObs.unobserve(target);
-    resizeObs.unobserve(target);
+    const badgeMap = targetToBadges.get(target);
+    if (badgeMap) {
+      badgeMap.delete(record.category);
+      if (badgeMap.size === 0) {
+        targetToBadges.delete(target);
+        intersectionObs.unobserve(target);
+        resizeObs.unobserve(target);
+      }
+    }
   }
 }
 
-function removeBadgeForTarget(el) {
-  const badgeId = targetToBadgeId.get(el);
-  if (badgeId !== undefined) removeBadge(badgeId);
+function removeBadgesForTarget(el) {
+  const badgeMap = targetToBadges.get(el);
+  if (!badgeMap) return;
+  for (const badgeId of [...badgeMap.values()]) {
+    const record = badgeRegistry.get(badgeId);
+    if (record) record.host.remove();
+    badgeRegistry.delete(badgeId);
+  }
+  targetToBadges.delete(el);
+  intersectionObs.unobserve(el);
+  resizeObs.unobserve(el);
 }
 
 // --- Visible content rect (accounts for object-fit) ---
@@ -267,7 +700,7 @@ function updateAllBadgePositions() {
     updates.push({
       badgeEl: record.badgeEl,
       top: targetRect.top - hostRect.top + 2,
-      left: targetRect.right - hostRect.left - 24 - 2,
+      left: targetRect.right - hostRect.left - 16 - 2 - (record.catIndex * 18),
     });
   }
   // Write phase — batch all transform writes
@@ -280,12 +713,14 @@ function updateAllBadgePositions() {
 
 const intersectionObs = new IntersectionObserver(entries => {
   for (const entry of entries) {
-    const badgeId = targetToBadgeId.get(entry.target);
-    if (badgeId === undefined) continue;
-    const record = badgeRegistry.get(badgeId);
-    if (!record) continue;
-    record.visible = entry.isIntersecting;
-    record.badgeEl.style.display = entry.isIntersecting ? '' : 'none';
+    const badgeMap = targetToBadges.get(entry.target);
+    if (!badgeMap) continue;
+    for (const badgeId of badgeMap.values()) {
+      const record = badgeRegistry.get(badgeId);
+      if (!record) continue;
+      record.visible = entry.isIntersecting;
+      record.badgeEl.style.display = entry.isIntersecting ? '' : 'none';
+    }
     if (entry.isIntersecting) scheduleUpdate();
   }
 }, { threshold: 0 });
@@ -317,9 +752,9 @@ async function processSingleImage(img) {
   } catch (_) {
     return;
   }
-  if (!result || result.level === null || result.level === undefined) return;
+  if (!result || !result.categories || Object.keys(result.categories).length === 0) return;
 
-  createBadge(img, result.level);
+  createBadges(img, result.categories);
 }
 
 async function processSingleBackground(el) {
@@ -340,9 +775,9 @@ async function processSingleBackground(el) {
   try {
     result = await sendBg({ type: "get_verdicts", url });
   } catch (_) { return; }
-  if (!result || result.level == null) return;
+  if (!result || !result.categories || Object.keys(result.categories).length === 0) return;
 
-  createBadge(el, result.level);
+  createBadges(el, result.categories);
 }
 
 function processImages() {
@@ -371,15 +806,15 @@ const domObserver = new MutationObserver(mutations => {
     }
     for (const node of mutation.removedNodes) {
       if (node.nodeType !== Node.ELEMENT_NODE) continue;
-      removeBadgeForTarget(node);
+      removeBadgesForTarget(node);
       for (const [url, elSet] of bgUrlToElements) {
         elSet.delete(node);
         if (elSet.size === 0) bgUrlToElements.delete(url);
       }
       if (node.querySelectorAll) {
-        node.querySelectorAll('img').forEach(img => removeBadgeForTarget(img));
+        node.querySelectorAll('img').forEach(img => removeBadgesForTarget(img));
         node.querySelectorAll('*').forEach(el => {
-          removeBadgeForTarget(el);
+          removeBadgesForTarget(el);
           for (const [url, elSet] of bgUrlToElements) {
             elSet.delete(el);
             if (elSet.size === 0) bgUrlToElements.delete(url);

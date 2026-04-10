@@ -19,11 +19,11 @@
     }
   ],
   "icons": {
-    "16": "icons/dcbs-2-suspect-16.png",
-    "24": "icons/dcbs-2-suspect-24.png",
-    "32": "icons/dcbs-2-suspect-32.png",
-    "64": "icons/dcbs-2-suspect-64.png",
-    "128": "icons/dcbs-2-suspect-128.png"
+    "16": "icons/authenticity-authentic-16.png",
+    "24": "icons/authenticity-authentic-24.png",
+    "32": "icons/authenticity-authentic-32.png",
+    "64": "icons/authenticity-authentic-64.png",
+    "128": "icons/authenticity-authentic-128.png"
   },
   "options_ui": {
     "page": "options/options.html",

@@ -7,14 +7,17 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
 	"gpg-attest.org/server/internal/store"
 )
 
-var allowedVerdicts = map[string]bool{
-	"false": true, "suspect": true, "plausible": true, "trusted": true, "verified": true,
+var allowedCategoryVerdicts = map[string]map[string]bool{
+	"authorship":   {"my-work": true, "revoke": true},
+	"method":       {"ai-generated": true, "revoke": true},
+	"authenticity": {"authentic": true, "satire": true, "misleading": true, "revoke": true},
 }
 
 // Handler handles HTTP requests for the transparency log API.
@@ -51,7 +54,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 // CreateRequest is the request body for creating a new attestation entry.
 type CreateRequest struct {
 	ArtifactHash string `json:"artifact_hash" example:"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"`
-	Verdict      string `json:"verdict" example:"trusted" enums:"false,suspect,plausible,trusted,verified"`
+	Category     string `json:"category" example:"authenticity" enums:"authorship,method,authenticity"`
+	Verdict      string `json:"verdict" example:"authentic" enums:"my-work,ai-generated,authentic,satire,misleading,revoke"`
 	SignerKeyID  string `json:"signer_keyid" example:"3AA5C34371567BD2"`
 	Signature    string `json:"signature" example:"LS0tLS1CRUdJTi..."`
 }
@@ -77,8 +81,13 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "artifact_hash must have sha256: prefix", http.StatusBadRequest)
 		return
 	}
+	allowedVerdicts, ok := allowedCategoryVerdicts[req.Category]
+	if !ok {
+		http.Error(w, fmt.Sprintf("category %q is not valid; must be one of: %s", req.Category, joinKeys(allowedCategoryVerdicts)), http.StatusBadRequest)
+		return
+	}
 	if !allowedVerdicts[req.Verdict] {
-		http.Error(w, "verdict must be one of: false, suspect, plausible, trusted, verified", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("verdict %q is not valid for category %q; must be one of: %s", req.Verdict, req.Category, joinKeys(allowedVerdicts)), http.StatusBadRequest)
 		return
 	}
 	if req.SignerKeyID == "" {
@@ -99,6 +108,7 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 	e := &store.Entry{
 		UUID:            id,
 		ArtifactHash:    req.ArtifactHash,
+		Category:        req.Category,
 		Verdict:         req.Verdict,
 		SignerKeyID:     req.SignerKeyID,
 		Signature:       req.Signature,
@@ -202,6 +212,16 @@ func (h *Handler) logInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(LogInfoResponse{TreeSize: treeSize, RootHash: rootHash}) //nolint:errcheck
+}
+
+// joinKeys returns sorted map keys as a comma-separated string.
+func joinKeys[V any](m map[string]V) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
 }
 
 func newUUID() (string, error) {

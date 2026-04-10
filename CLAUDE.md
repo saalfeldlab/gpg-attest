@@ -53,16 +53,30 @@ all of these mismatches.
 ```json
 {
   "artifact_hash": "sha256:<hex>",
-  "verdict": "trusted",
+  "category": "authenticity",
+  "verdict": "authentic",
   "signer_keyid": "<pgp key fingerprint>",
   "signature": "<base64-encoded PGP detached signature>"
 }
 ```
 
+The `category` field specifies which verdict dimension is being attested. Valid
+category/verdict combinations:
+
+| Category | Allowed verdicts | Type |
+| --- | --- | --- |
+| `authorship` | `my-work`, `revoke` | Toggle — "I created this" |
+| `method` | `ai-generated`, `revoke` | Toggle — "AI was used" |
+| `authenticity` | `authentic`, `satire`, `misleading`, `revoke` | Exclusive scale |
+
+Each category is independently signable. A signer can submit multiple entries for
+the same artifact (one per category). The `revoke` verdict withdraws a previous
+claim in that category, returning to silence.
+
 The server adds `uuid`, `log_index`, `server_timestamp`, and `server_signature` to the stored
 entry and returns them in the response.
 
-The signer signs the canonical JSON serialisation of the four fields above (keys sorted, no
+The signer signs the canonical JSON serialisation of the five fields above (keys sorted, no
 extra whitespace). Any verifier can reconstruct the signed payload from the entry fields and
 check the PGP signature against the claimed `signer_keyid` — no separate `payload` field is
 needed.
@@ -226,9 +240,9 @@ Open DevTools (F12) and switch to the **Console** tab.
 
 ### 5. Attest an image
 
-1. Right-click any image → the context menu shows five DCBS verdict items: **false**, **suspect**, **plausible**, **trusted**, **verified** (each with its DCBS icon)
-2. If no signing key is selected yet, the key dialog appears → select `Test Signer <test@gpg-attest.org>` → **Save**
-3. Click a verdict (e.g. **trusted**) → the Console prints the sha256 hash and PGP signature
+1. Right-click any image → click **Attest...** in the context menu
+2. The attestation dialog opens with key selector, checkboxes for **I created this** (authorship) and **AI-generated** (method), and radio buttons for **Authentic** / **Satire** / **Misleading** (authenticity)
+3. Select one or more verdicts → click **Sign** → the Console prints the sha256 hash and PGP signature for each category
 
 ### Reloading after code changes
 
@@ -236,54 +250,45 @@ After editing extension JS/CSS, click **Reload** on the `about:debugging` page.
 After editing the native host, re-run `cd /workspace/client && make install` and reload
 the extension.
 
-## Digital Content Belief Scale (DCBS)
+## Verdict Categories
 
-A five-level classification for assessing the authenticity, accuracy, and correctness of digital content. Modeled on PGP's trust levels (1–5).
+Verdicts use three independent categories. Each is independently signable and revocable.
 
-### The Scale
+| Category | Type | Verdicts | Meaning |
+| --- | --- | --- | --- |
+| **Authorship** | Toggle (checkbox) | `my-work` | "I created this" |
+| **Method** | Toggle (checkbox) | `ai-generated` | "AI was used to produce this" |
+| **Authenticity** | Exclusive scale (radio) | `authentic`, `satire`, `misleading` | Deception/intent spectrum |
 
-| Level | Label         | Summary                                                                                                |
-| ----- | ------------- | ------------------------------------------------------------------------------------------------------ |
-| 1     | **False**     | Contradicted by evidence; fabricated, manipulated, or demonstrably wrong.                              |
-| 2     | **Suspect**   | Uncorroborated; significant red flags; origin untraceable or anonymous.                                |
-| 3     | **Plausible** | Consistent with known facts; partially corroborated; source recognizable but unverified.               |
-| 4     | **Trusted**   | Multiple independent credible sources; valid signatures; identifiable origin.                          |
-| 5     | **Verified**  | Cryptographic proof of origin and integrity; independently confirmed by authoritative primary sources. |
+A signer can select any combination (e.g., `my-work` + `ai-generated` + `authentic`).
+No selection in a category means no claim about that dimension. The `revoke` verdict
+withdraws a previous claim in a category, returning to silence.
 
-### Assessment Dimensions
+### Aggregation
 
-The overall level reflects the **lower** of two independent scores:
-
-- **Provenance Integrity** — Is the content authentically from its claimed source?
-- **Factual Accuracy** — Is what it states true?
-
-### Quick-Reference Summary
-
-```
-1  False      ██░░░░░░░░  Reject
-2  Suspect    ████░░░░░░  Investigate
-3  Plausible  ██████░░░░  Use with caveats
-4  Trusted    ████████░░  Decide on
-5  Verified   ██████████  Ground truth
-```
+The extension queries the log for all entries matching an artifact hash, filters to
+trusted signers (per the user's GPG web-of-trust), keeps the latest entry per
+(signer, category) pair, verifies both server-timestamp and signer signatures, then
+aggregates per category using plurality vote. Up to three badges are displayed per
+image (one per category), stacked horizontally using 16px icons.
 
 ### Badge Icons
 
 SVG source and pre-rendered PNGs live in `extension/icons/`. Each icon is a 32×32 filled
 circle with a 1 px white stroke and a white glyph:
 
-| File prefix        | Color  | Hex       | Glyph |
-| ------------------ | ------ | --------- | ----- |
-| `dcbs-1-false`     | Red    | `#C62828` | ✘     |
-| `dcbs-2-suspect`   | Orange | `#E65100` | ?     |
-| `dcbs-3-plausible` | Grey   | `#757575` | ~     |
-| `dcbs-4-trusted`   | Teal   | `#00796B` | ✓     |
-| `dcbs-5-verified`  | Indigo | `#283593` | ★     |
+| File prefix              | Color  | Hex       | Glyph |
+| ------------------------ | ------ | --------- | ----- |
+| `authorship-my-work`     | Blue   | `#1565C0` | ✎     |
+| `method-ai-generated`    | Purple | `#6A1B9A` | ⚙     |
+| `authenticity-authentic` | Teal   | `#00796B` | ✓     |
+| `authenticity-satire`    | Amber  | `#F57F17` | ☺     |
+| `authenticity-misleading`| Red    | `#C62828` | ⚠     |
 
 PNGs are generated from the SVGs at sizes 16, 24, 32, 64, and 128 px using `rsvg-convert`:
 
 ```bash
-for svg in extension/icons/dcbs-*.svg; do
+for svg in extension/icons/authorship-*.svg extension/icons/method-*.svg extension/icons/authenticity-*.svg; do
   base="${svg%.svg}"
   for size in 16 24 32 64 128; do
     rsvg-convert -w $size -h $size "$svg" -o "${base}-${size}.png"
