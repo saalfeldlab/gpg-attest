@@ -1,8 +1,18 @@
+# gpg-attest — Decentralized attestations for digital content
+
 **gpg-attest** is a browser extension + native messaging host + transparency log server that lets users attach GnuPG-signed attestations to digital content (identified by SHA-256) and record them on an append-only log. Anyone can query the log by artifact hash and evaluate attestations against their own trust model. The log timestamps each entry with its own signature so that attestations cannot be back-dated after key revocation.
 
-For any media element (currently only images), the browser extension queries the log servers for trusted attestations, and displays badges over the media element.
+For any media element (currently only images), the extension queries log servers for trusted attestations and displays badges directly over the content — so users can see at a glance what their trust network thinks.
 
-This way, users can quickly know what their trust network thinks about the content.
+### Why?
+
+AI tools can now generate digital content that is indistinguishable from reality. When content cannot be attributed to a known source, individuals have no way to verify whether what they see is real.
+
+[C2PA](https://c2pa.org/) addresses this by embedding cryptographic signatures in media files. However, it only works for file formats that support sideloaded metadata, and the signatures must be certified by centralized identity providers.
+
+[Sigstore's Rekor](https://www.sigstore.dev/) takes a different approach: it stores signatures of content hashes in an external append-only log, so the signature does not need to travel with the file. This means it cannot be falsified and does not even require that the server is trusted. Rekor's default workflow, however, relies on centralized identity providers like [GitHub](https://github.com/) and [Google](https://google.com/) for signer identity.
+
+gpg-attest combines hash-based lookup and append-only transparency from Rekor with decentralized trust from the PGP web-of-trust — no centralized authorities required.
 
 - **`extension/`** — [attestension](extension/): WebExtensions Manifest V3 browser extension (Chrome, Firefox). Attestation client and display — right-click images to attest them; query any configured log for existing attestations.
 - **`client/`** — gpg-attest: Native messaging host (Go). Bridges the browser to the local `gpg` binary; private keys never leave the GPG keyring.
@@ -12,11 +22,11 @@ This way, users can quickly know what their trust network thinks about the conte
 
 Verdicts use three independent categories, each independently signable and revocable:
 
-| Category | Type | Verdicts | Meaning |
-| --- | --- | --- | --- |
-| **Authorship** | Toggle | `my-work` | "I created this" |
-| **Method** | Toggle | `ai-generated` | "AI was used to produce this" |
-| **Authenticity** | Exclusive scale | `authentic` / `satire` / `misleading` | Deception/intent spectrum |
+| Category         | Type            | Verdicts                              | Meaning                       |
+| ---------------- | --------------- | ------------------------------------- | ----------------------------- |
+| **Authorship**   | Toggle          | `my-work`                             | "I created this"              |
+| **Method**       | Toggle          | `ai-generated`                        | "AI was used to produce this" |
+| **Authenticity** | Exclusive scale | `authentic` / `satire` / `misleading` | Deception/intent spectrum     |
 
 A signer can select any combination. No selection in a category means no claim about that dimension. The special verdict `revoke` withdraws a previous claim in a category.
 
