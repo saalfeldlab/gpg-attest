@@ -72,6 +72,12 @@ type CreateRequest struct {
 // @Failure      500    {string}  string  "internal error"
 // @Router       /entries [post]
 func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
+	// Limit request body to 100 KB.  Current payloads are small (short verdict
+	// string + ~1–2 KB GPG signature), but the verdict field is designed to
+	// evolve into arbitrary nested JSON (category as class, verdict as instance),
+	// so we leave headroom for growth while still preventing memory exhaustion.
+	r.Body = http.MaxBytesReader(w, r.Body, 100*1024)
+
 	var req CreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
