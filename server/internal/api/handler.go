@@ -15,6 +15,18 @@ import (
 	"gpg-attest.org/server/internal/store"
 )
 
+// maxSignatureSize is the upper bound for an ASCII-armored PGP detached
+// signature.  8 KB covers all classical algorithms (RSA-16384 ≈ 2.9 KB
+// armored) and post-quantum ML-DSA (ML-DSA-87 ≈ 6.3 KB armored).  SLH-DSA
+// signatures can reach ~67 KB but are not yet supported by GPG; raise this
+// limit when they are.
+const maxSignatureSize = 8 * 1024
+
+// maxSignerKeyIDSize is the upper bound for a GPG key identifier.  Typical
+// values are 8–40 hex characters (short ID, long ID, or fingerprint) or an
+// email address.  256 bytes is generous for any of these.
+const maxSignerKeyIDSize = 256
+
 var allowedCategoryVerdicts = map[string]map[string]bool{
 	"authorship":   {"my-work": true, "revoke": true},
 	"method":       {"ai-generated": true, "revoke": true},
@@ -84,24 +96,8 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	// Validate artifact_hash format: "algorithm:hex" where the hex portion must
-	// be the correct length for the algorithm.  To add a new hash algorithm,
-	// add an entry to this map, e.g. "sha512": 128 for SHA-512.
-	hashLengths := map[string]int{
-		"sha256": 64,
-	}
-	parts := strings.SplitN(req.ArtifactHash, ":", 2)
-	expectedLen, ok := hashLengths[parts[0]]
-	if !ok || len(parts) != 2 {
-		http.Error(w, fmt.Sprintf("artifact_hash must use a supported algorithm (%s)", joinKeys(hashLengths)), http.StatusBadRequest)
-		return
-	}
-	if len(parts[1]) != expectedLen {
-		http.Error(w, fmt.Sprintf("artifact_hash %s portion must be %d hex characters", parts[0], expectedLen), http.StatusBadRequest)
-		return
-	}
-	if _, err := hex.DecodeString(parts[1]); err != nil {
-		http.Error(w, "artifact_hash hex portion is not valid hex", http.StatusBadRequest)
+	if err := validateHash(req.ArtifactHash); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	allowedVerdicts, ok := allowedCategoryVerdicts[req.Category]
@@ -117,8 +113,16 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "signer_keyid is required", http.StatusBadRequest)
 		return
 	}
+	if len(req.SignerKeyID) > maxSignerKeyIDSize {
+		http.Error(w, fmt.Sprintf("signer_keyid too long (max %d bytes)", maxSignerKeyIDSize), http.StatusBadRequest)
+		return
+	}
 	if req.Signature == "" {
 		http.Error(w, "signature is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Signature) > maxSignatureSize {
+		http.Error(w, fmt.Sprintf("signature too large (max %d bytes)", maxSignatureSize), http.StatusBadRequest)
 		return
 	}
 
@@ -162,6 +166,10 @@ func (h *Handler) listEntries(w http.ResponseWriter, r *http.Request) {
 	hash := r.URL.Query().Get("hash")
 	if hash == "" {
 		http.Error(w, "hash query parameter is required", http.StatusBadRequest)
+		return
+	}
+	if err := validateHash(hash); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	entries, err := h.store.GetByHash(r.Context(), hash)
@@ -235,6 +243,29 @@ func (h *Handler) logInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(LogInfoResponse{TreeSize: treeSize, RootHash: rootHash}) //nolint:errcheck
+}
+
+// Supported hash algorithms and their expected hex digest lengths.
+// To add a new algorithm, add an entry here, e.g. "sha512": 128 for SHA-512.
+var hashLengths = map[string]int{
+	"sha256": 64,
+}
+
+// validateHash checks that s is "algorithm:hex" with a supported algorithm and
+// correct hex length.
+func validateHash(s string) error {
+	parts := strings.SplitN(s, ":", 2)
+	expectedLen, ok := hashLengths[parts[0]]
+	if !ok || len(parts) != 2 {
+		return fmt.Errorf("hash must use a supported algorithm (%s)", joinKeys(hashLengths))
+	}
+	if len(parts[1]) != expectedLen {
+		return fmt.Errorf("%s hash must be %d hex characters", parts[0], expectedLen)
+	}
+	if _, err := hex.DecodeString(parts[1]); err != nil {
+		return fmt.Errorf("hash hex portion is not valid hex")
+	}
+	return nil
 }
 
 // joinKeys returns sorted map keys as a comma-separated string.

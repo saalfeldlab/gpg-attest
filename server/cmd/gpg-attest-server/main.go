@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -65,8 +66,14 @@ func main() {
 		httpSwagger.URL("/swagger/doc.json"),
 	))
 
+	rl := api.NewRateLimiter(
+		rate.Limit(50), 50,  // global: 50 req/s
+		rate.Limit(5), 5,    // per-IP: 5 req/s
+		60*time.Second,      // sweep stale IP entries every 60s
+	)
+
 	log.Printf("gpg-attest-server listening on %s (tree %d)", *addr, *treeID)
-	if err := http.ListenAndServe(*addr, loggingMiddleware(mux)); err != nil {
+	if err := http.ListenAndServe(*addr, rl.Middleware(loggingMiddleware(mux))); err != nil {
 		log.Fatal(err)
 	}
 }

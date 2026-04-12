@@ -21,7 +21,9 @@ Signing is intentionally done in the native helper (not OpenPGP.js) so that:
 ## Transparency Log Server (and why we don't just use Rekor)
 
 The custom log server replaces Rekor. It is deliberately minimal: it does **not** verify
-submitted signatures. That is the client's responsibility. The server's role is:
+submitted signatures. That is the client's responsibility. The server enforces input
+validation (hash format, field size limits) and rate limiting (global 50 req/s + per-IP
+5 req/s) but its role is:
 
 1. **Append-only storage** — entries are never modified or deleted (Trillian Merkle tree)
 2. **Authoritative timestamps** — the server signs each entry with its own key, preventing
@@ -59,6 +61,12 @@ all of these mismatches.
   "signature": "<base64-encoded PGP detached signature>"
 }
 ```
+
+Request body is limited to 100 KB (verdict may evolve into arbitrary nested JSON).
+`artifact_hash` must be `algorithm:<hex>` with correct length (currently `sha256:` + 64 hex
+chars; add new algorithms to `hashLengths` in `handler.go`). `signature` is capped at 8 KB
+(sufficient for all classical and ML-DSA post-quantum signatures). `signer_keyid` is capped
+at 256 bytes.
 
 The `category` field specifies which verdict dimension is being attested. Valid
 category/verdict combinations:

@@ -70,7 +70,7 @@ We can integrate sensible actions into the browser extension with opinionated de
 
 #### 3. The server is not robust
 
-We would prefer to build on the hardened Rekor Sigstore stack directly instead of maintaining an adjacent API. What we need is an API adjusted to permit submission of {hash, verdict, signature} without checking anything. The current server is not robust or scalable. A future version could add rate limiting and basic sanity checks (e.g., enforced wait times between submissions) to resist DoS without breaking the no-verification model. Bulk submission APIs for app-level use may need more thought.
+We would prefer to build on the hardened Rekor Sigstore stack directly instead of maintaining an adjacent API. What we need is an API adjusted to permit submission of {hash, verdict, signature} without checking anything. The current server is not robust or scalable. Basic rate limiting is in place (global 50 req/s + per-IP 5 req/s) and input validation enforces size and format constraints, but the server is not designed for high-frequency worldwide usage or targeted DoS attacks. Bulk submission APIs for app-level use may need more thought.
 
 ## Build
 
