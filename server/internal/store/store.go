@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/trillian"
 	"github.com/google/trillian/types"
@@ -104,14 +106,23 @@ func (s *Store) Append(ctx context.Context, e *Entry) error {
 		return fmt.Errorf("redis pipeline: %w", err)
 	}
 
-	// Queue leaf to Trillian for tamper-evident audit trail (fire-and-forget).
+	// Queue leaf to Trillian for tamper-evident audit trail.  Runs in a
+	// goroutine so the HTTP response isn't blocked by Trillian latency.
+	// Uses context.Background() as parent (not the request context) because
+	// the goroutine must outlive the HTTP request; the 10s timeout is the
+	// safety net against Trillian hangs.
 	leafData := data
+	logIndex := e.LogIndex
 	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 		req := &trillian.QueueLeafRequest{
 			LogId: s.treeID,
 			Leaf:  &trillian.LogLeaf{LeafValue: leafData},
 		}
-		s.tlog.QueueLeaf(context.Background(), req) //nolint:errcheck
+		if _, err := s.tlog.QueueLeaf(ctx, req); err != nil {
+			log.Printf("trillian QueueLeaf failed (log_index %d): %v", logIndex, err)
+		}
 	}()
 
 	return nil

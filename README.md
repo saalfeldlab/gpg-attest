@@ -68,7 +68,11 @@ We can integrate sensible actions into the browser extension with opinionated de
 - trust somebody's key
 - revoke trust of somebody's key
 
-#### 3. The server is not robust
+#### 3. Verification cost scales with attestations per image
+
+The native host verifies two GPG signatures per trusted attestation (signer + server timestamp), each as a separate `gpg --verify` subprocess. The size of a user's trust network does not matter — only trusted entries matching the image are verified. But if a popular image is attested by hundreds of trusted signers, verification becomes slow. Future mitigation: parallelize GPG invocations or cache verification results.
+
+#### 4. The server is not robust
 
 We would prefer to build on the hardened Rekor Sigstore stack directly instead of maintaining an adjacent API. What we need is an API adjusted to permit submission of {hash, verdict, signature} without checking anything. The current server is not robust or scalable. Basic rate limiting is in place (global 50 req/s + per-IP 5 req/s) and input validation enforces size and format constraints, but the server is not designed for high-frequency worldwide usage or targeted DoS attacks. Bulk submission APIs for app-level use may need more thought.
 
