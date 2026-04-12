@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -83,8 +84,24 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	if !strings.HasPrefix(req.ArtifactHash, "sha256:") || len(req.ArtifactHash) <= 7 {
-		http.Error(w, "artifact_hash must have sha256: prefix", http.StatusBadRequest)
+	// Validate artifact_hash format: "algorithm:hex" where the hex portion must
+	// be the correct length for the algorithm.  To add a new hash algorithm,
+	// add an entry to this map, e.g. "sha512": 128 for SHA-512.
+	hashLengths := map[string]int{
+		"sha256": 64,
+	}
+	parts := strings.SplitN(req.ArtifactHash, ":", 2)
+	expectedLen, ok := hashLengths[parts[0]]
+	if !ok || len(parts) != 2 {
+		http.Error(w, fmt.Sprintf("artifact_hash must use a supported algorithm (%s)", joinKeys(hashLengths)), http.StatusBadRequest)
+		return
+	}
+	if len(parts[1]) != expectedLen {
+		http.Error(w, fmt.Sprintf("artifact_hash %s portion must be %d hex characters", parts[0], expectedLen), http.StatusBadRequest)
+		return
+	}
+	if _, err := hex.DecodeString(parts[1]); err != nil {
+		http.Error(w, "artifact_hash hex portion is not valid hex", http.StatusBadRequest)
 		return
 	}
 	allowedVerdicts, ok := allowedCategoryVerdicts[req.Category]
