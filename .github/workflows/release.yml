@@ -47,7 +47,7 @@ jobs:
       - name: Cross-compile
         run: cd client && make cross VERSION=${{ steps.version.outputs.version }}
       - name: Build deb (amd64)
-        run: cd client && make deb VERSION=${{ steps.version.outputs.version }}
+        run: cd client && ./scripts/build-deb.sh ./build/gpg-attest-linux-amd64 ${{ steps.version.outputs.version }} amd64
       - name: Build deb (arm64)
         run: cd client && ./scripts/build-deb.sh ./build/gpg-attest-linux-arm64 ${{ steps.version.outputs.version }} arm64
       - name: Build rpm (x86_64)

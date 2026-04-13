@@ -21,7 +21,7 @@ import (
 )
 
 // @title           gpg-attest-server API
-// @version         0.1.0
+// @version         0.2.0
 // @description     Transparency log for GPG-signed attestations on digital content.
 // @description     Stores entries in a Trillian Merkle tree, indexes by artifact SHA-256 via Redis,
 // @description     and signs each entry with the server's GPG key.
