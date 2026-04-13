@@ -1,6 +1,16 @@
 const DEFAULT_LOG_SERVER = "https://gpg-attest.org";
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+const ALLOWED_PROTOCOLS = ["http:", "https:", "file:"];
+
+function validateImageUrl(url) {
+  const parsed = new URL(url);
+  if (!ALLOWED_PROTOCOLS.includes(parsed.protocol)) {
+    throw new Error(`Unsupported protocol: ${parsed.protocol}`);
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) return;
   handleMessage(msg)
     .then(sendResponse)
     .catch((err) => sendResponse({ ok: false, error: err.message }));
@@ -71,6 +81,25 @@ const VERDICT_ICONS = {
   "authenticity:satire": "authenticity-satire",
   "authenticity:misleading": "authenticity-misleading",
 };
+
+const ENTRY_STRING_FIELDS = [
+  "uuid", "artifact_hash", "category", "verdict",
+  "signer_keyid", "signature", "server_timestamp", "server_signature",
+];
+
+function isValidEntry(entry) {
+  if (!entry || typeof entry !== "object") return false;
+  for (const field of ENTRY_STRING_FIELDS) {
+    if (typeof entry[field] !== "string") return false;
+  }
+  if (typeof entry.log_index !== "number") return false;
+  return true;
+}
+
+function validateEntries(data) {
+  if (!Array.isArray(data)) return [];
+  return data.filter(isValidEntry);
+}
 
 let trustedKeysCache = null; // { keys: string[], fetchedAt: number }
 let serverKeyCache = null; // { fingerprint: string, importedAt: number }
@@ -179,6 +208,7 @@ async function handleGetVerdicts(url) {
     }
 
     try {
+      validateImageUrl(url);
       const response = await fetch(url);
       if (!response.ok) {
         return cacheAndReturn(emptyResult);
@@ -203,11 +233,11 @@ async function handleGetVerdicts(url) {
       if (!entriesResp.ok) {
         return cacheAndReturn(emptyResult);
       }
-      const entries = await entriesResp.json();
+      const entries = validateEntries(await entriesResp.json());
 
       // Filter to trusted signers, keep latest entry per (signer, category)
       const bySignerCategory = new Map(); // "signer:category" -> entry
-      for (const entry of entries || []) {
+      for (const entry of entries) {
         if (!entry.category) continue; // skip legacy entries without category
         if (!trustedFingerprints.includes(entry.signer_keyid)) continue;
         const key = `${entry.signer_keyid}:${entry.category}`;
@@ -356,6 +386,7 @@ async function handleGetMyVerdicts(url) {
     const { selectedKeyID } = await chrome.storage.local.get("selectedKeyID");
     if (!selectedKeyID) return emptyResult;
 
+    validateImageUrl(url);
     const response = await fetch(url);
     if (!response.ok) return emptyResult;
     const buffer = await response.arrayBuffer();
@@ -371,11 +402,11 @@ async function handleGetMyVerdicts(url) {
       `${logServer}/api/v1/entries?hash=sha256:${sha256Hex}`,
     );
     if (!entriesResp.ok) return emptyResult;
-    const entries = await entriesResp.json();
+    const entries = validateEntries(await entriesResp.json());
 
     // Keep latest entry per category for this user's key
     const byCategory = {};
-    for (const entry of entries || []) {
+    for (const entry of entries) {
       if (!entry.category) continue;
       if (entry.signer_keyid !== selectedKeyID) continue;
       const existing = byCategory[entry.category];
@@ -399,6 +430,7 @@ async function handleGetMyVerdicts(url) {
 
 async function handleSign(url, keyID, category, verdict) {
   // 1. Fetch image and compute SHA-256
+  validateImageUrl(url);
   const response = await fetch(url);
   if (!response.ok)
     throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
@@ -446,6 +478,9 @@ async function handleSign(url, keyID, category, verdict) {
     );
   }
   const entry = await postResp.json();
+  if (!isValidEntry(entry)) {
+    throw new Error("Log server returned an invalid entry");
+  }
 
   verdictsCache.delete(url);
 

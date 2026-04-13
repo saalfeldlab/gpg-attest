@@ -56,7 +56,7 @@ func handle(req *protocol.Request) *protocol.Response {
 		keys, err := gpg.ListKeys()
 		if err != nil {
 			log.Printf("list_keys error: %v", err)
-			return errResp(req.ID, fmt.Sprintf("list_keys: %v", err))
+			return errResp(req.ID, "list_keys failed")
 		}
 		return &protocol.Response{
 			ID:   req.ID,
@@ -68,7 +68,7 @@ func handle(req *protocol.Request) *protocol.Response {
 		keys, err := gpg.ListSecretKeys()
 		if err != nil {
 			log.Printf("list_secret_keys error: %v", err)
-			return errResp(req.ID, fmt.Sprintf("list_secret_keys: %v", err))
+			return errResp(req.ID, "list_secret_keys failed")
 		}
 		return &protocol.Response{
 			ID:   req.ID,
@@ -90,7 +90,7 @@ func handle(req *protocol.Request) *protocol.Response {
 		sig, err := gpg.Sign(req.KeyID, payload)
 		if err != nil {
 			log.Printf("sign error: %v", err)
-			return errResp(req.ID, fmt.Sprintf("sign: %v", err))
+			return errResp(req.ID, "sign failed")
 		}
 		return &protocol.Response{
 			ID:        req.ID,
@@ -112,7 +112,7 @@ func handle(req *protocol.Request) *protocol.Response {
 			}
 			vr, err := gpg.Verify(entry.Signature, payload)
 			if err != nil {
-				results[i].Error = fmt.Sprintf("verify: %v", err)
+				results[i].Error = "verify failed"
 				continue
 			}
 			results[i].Fingerprint = vr.Fingerprint
@@ -164,7 +164,7 @@ func handle(req *protocol.Request) *protocol.Response {
 		fingerprints, err := gpg.ImportKey(keyData)
 		if err != nil {
 			log.Printf("import_key error: %v", err)
-			return errResp(req.ID, fmt.Sprintf("import_key: %v", err))
+			return errResp(req.ID, "import_key failed")
 		}
 		return &protocol.Response{
 			ID:       req.ID,

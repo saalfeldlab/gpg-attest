@@ -1,23 +1,22 @@
 // --- Shared guards ---
 
-function isOwnResource(url) {
-  return url && url.startsWith(chrome.runtime.getURL(''));
-}
-
 function isOwnElement(el) {
   return el.dataset && el.dataset.attestBadge !== undefined ||
-         el.dataset && el.dataset.attestDialog !== undefined ||
-         (el.tagName === 'IMG' && isOwnResource(el.src));
+         el.dataset && el.dataset.attestDialog !== undefined;
 }
 
 // --- Background-image URL parser ---
+
+function isExtensionUrl(url) {
+  return url && url.startsWith(chrome.runtime.getURL(''));
+}
 
 function parseBgUrl(el) {
   const bg = getComputedStyle(el).backgroundImage;
   if (!bg || bg === 'none') return null;
   const m = bg.match(/url\(["']?([^"')]+)["']?\)/);
   if (!m) return null;
-  return isOwnResource(m[1]) ? null : m[1];
+  return isExtensionUrl(m[1]) ? null : m[1];
 }
 
 // --- Context menu image resolver ---
@@ -282,7 +281,7 @@ async function openAttestDialog(imageUrl) {
   authorshipCheck.appendChild(authorshipInput);
   const authorshipIcon = document.createElement('img');
   authorshipIcon.className = 'attest-verdict-icon';
-  authorshipIcon.src = chrome.runtime.getURL('icons/authorship-my-work-16.png');
+  authorshipIcon.src = ICON_DATA['authorship-my-work-16'];
   authorshipCheck.appendChild(authorshipIcon);
   authorshipCheck.appendChild(document.createTextNode('I created this'));
   if (before.authorship) authorshipInput.checked = true;
@@ -304,7 +303,7 @@ async function openAttestDialog(imageUrl) {
   methodCheck.appendChild(methodInput);
   const methodIcon = document.createElement('img');
   methodIcon.className = 'attest-verdict-icon';
-  methodIcon.src = chrome.runtime.getURL('icons/method-ai-generated-16.png');
+  methodIcon.src = ICON_DATA['method-ai-generated-16'];
   methodCheck.appendChild(methodIcon);
   methodCheck.appendChild(document.createTextNode('AI-generated'));
   if (before.method) methodInput.checked = true;
@@ -345,7 +344,7 @@ async function openAttestDialog(imageUrl) {
     radioLabel.appendChild(radio);
     const radioIcon = document.createElement('img');
     radioIcon.className = 'attest-verdict-icon';
-    radioIcon.src = chrome.runtime.getURL(`icons/authenticity-${value}-16.png`);
+    radioIcon.src = ICON_DATA[`authenticity-${value}-16`];
     radioLabel.appendChild(radioIcon);
     radioLabel.appendChild(document.createTextNode(label));
     authDiv.appendChild(radioLabel);
@@ -475,7 +474,8 @@ function closeAttestDialog() {
 
 // --- Message listener ---
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) return;
   if (msg.type === "attest_result") {
     document.querySelectorAll("img").forEach(img => {
       if (img.currentSrc === msg.url || img.src === msg.url) {
@@ -552,7 +552,7 @@ function createBadges(targetEl, categories) {
     const iconFile = info.icon;
     if (!iconFile) { catIndex++; continue; }
 
-    const iconUrl = chrome.runtime.getURL(`icons/${iconFile}-14.png`);
+    const iconUrl = ICON_DATA[`${iconFile}-14`];
     const title = `${cat}: ${info.verdict} (${info.signers} signer${info.signers > 1 ? 's' : ''})`;
 
     const existingBadgeId = badgeMap.get(cat);
