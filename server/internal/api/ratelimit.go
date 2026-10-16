@@ -3,6 +3,7 @@ package api
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,6 +74,31 @@ func (rl *RateLimiter) getIPLimiter(ip string) *rate.Limiter {
 	return entry.limiter
 }
 
+// ClientIP returns the address of the originating client, used for per-IP rate
+// limiting and request logging. The server runs behind a reverse proxy
+// (Traefik), so the connecting peer (r.RemoteAddr) is always the proxy and
+// would collapse every client into a single bucket. The originating client is
+// the left-most entry of X-Forwarded-For, which Traefik sets and sanitizes: it
+// overwrites client-supplied values arriving from sources outside its
+// forwardedHeaders.trustedIPs. When the header is absent or its first entry is
+// not a valid IP, it falls back to the connecting peer address.
+//
+// Only deploy this behind a proxy that sanitizes X-Forwarded-For. Exposed
+// directly, a client could set the header to pick its own rate-limit bucket.
+func ClientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		first := strings.TrimSpace(strings.SplitN(forwarded, ",", 2)[0])
+		if ip := net.ParseIP(first); ip != nil {
+			return ip.String()
+		}
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+
 // Middleware returns an http.Handler that rejects requests exceeding either
 // rate limit with 429 Too Many Requests.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
@@ -81,11 +107,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
-		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-		if ip == "" {
-			ip = r.RemoteAddr
-		}
-		if !rl.getIPLimiter(ip).Allow() {
+		if !rl.getIPLimiter(ClientIP(r)).Allow() {
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
